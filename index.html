@@ -1,186 +1,804 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>AR Hand Tracking Fix</title>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AR Hand Tracking — Holographic UI</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <style>
-html,body{
-margin:0;
-overflow:hidden;
-background:#000;
-}
-canvas{
-position:fixed;
-top:0;
-left:0;
-}
-video{
-display:none;
-}
-#ui{
-position:fixed;
-top:10px;
-left:10px;
-color:#0ff;
-font-family:monospace;
-z-index:10;
-}
-#wm{
-position:fixed;
-bottom:10px;
-right:10px;
-color:#0ff;
-opacity:0.7;
-font-family:monospace;
-}
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --neon-cyan: #00f5ff;
+    --neon-pink: #ff00aa;
+    --neon-green: #00ff88;
+    --neon-orange: #ff6600;
+    --neon-purple: #aa00ff;
+    --bg: #000008;
+    --panel-bg: rgba(0,10,30,0.7);
+    --border: rgba(0,245,255,0.25);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--neon-cyan);
+  }
+
+  #app {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Starfield */
+  #starfield {
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none;
+  }
+
+  /* Matrix rain */
+  #matrix {
+    position: fixed; inset: 0; z-index: 1;
+    opacity: 0.13;
+    pointer-events: none;
+  }
+
+  /* Main camera + draw canvas */
+  #video {
+    position: absolute;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    filter: brightness(1.35) contrast(1.2) saturate(1.1);
+    z-index: 2;
+  }
+
+  #canvas {
+    position: absolute;
+    width: 100%; height: 100%;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* HUD overlay */
+  #hud {
+    position: fixed; inset: 0; z-index: 4;
+    pointer-events: none;
+  }
+
+  .hud-corner {
+    position: absolute;
+    width: 60px; height: 60px;
+    border-color: var(--neon-cyan);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .hud-corner.tl { top:16px; left:16px; border-width: 2px 0 0 2px; }
+  .hud-corner.tr { top:16px; right:16px; border-width: 2px 2px 0 0; }
+  .hud-corner.bl { bottom:16px; left:16px; border-width: 0 0 2px 2px; }
+  .hud-corner.br { bottom:16px; right:16px; border-width: 0 2px 2px 0; }
+
+  /* Scan line */
+  .scan-line {
+    position: absolute; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+    animation: scan 4s linear infinite;
+    opacity: 0.35;
+  }
+  @keyframes scan {
+    0%   { top: 0%; }
+    100% { top: 100%; }
+  }
+
+  /* Status panel */
+  #status-panel {
+    position: fixed; top: 20px; left: 24px; z-index: 5;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    line-height: 1.9;
+    backdrop-filter: blur(6px);
+    text-shadow: 0 0 8px var(--neon-cyan);
+    min-width: 190px;
+  }
+  #status-panel .label { color: rgba(0,245,255,0.5); font-size: 10px; text-transform: uppercase; letter-spacing: 2px; }
+  #status-panel .value { color: var(--neon-cyan); }
+  #status-panel .value.active { color: var(--neon-green); }
+  #status-panel .value.warn { color: var(--neon-orange); }
+
+  /* FPS */
+  #fps-box {
+    position: fixed; top: 20px; right: 24px; z-index: 5;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 14px;
+    backdrop-filter: blur(6px);
+    text-align: center;
+  }
+  #fps-box .fps-num {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--neon-green);
+    text-shadow: 0 0 16px var(--neon-green);
+    display: block;
+  }
+  #fps-box .fps-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(0,255,136,0.5);
+  }
+
+  /* Gesture badge */
+  #gesture-display {
+    position: fixed; bottom: 40px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    padding: 10px 28px;
+    border-radius: 40px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+    text-shadow: 0 0 20px currentColor;
+    pointer-events: none;
+    opacity: 0;
+  }
+  #gesture-display.show { opacity: 1; }
+  #gesture-display.pinch { color: var(--neon-pink); border-color: var(--neon-pink); text-shadow: 0 0 20px var(--neon-pink); box-shadow: 0 0 30px rgba(255,0,170,0.3); }
+  #gesture-display.open  { color: var(--neon-green); border-color: var(--neon-green); text-shadow: 0 0 20px var(--neon-green); box-shadow: 0 0 30px rgba(0,255,136,0.3); }
+  #gesture-display.beam  { color: var(--neon-orange); border-color: var(--neon-orange); text-shadow: 0 0 20px var(--neon-orange); box-shadow: 0 0 30px rgba(255,102,0,0.4); }
+
+  /* Title */
+  #title-bar {
+    position: fixed; top: 20px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: rgba(0,245,255,0.6);
+    text-shadow: 0 0 12px var(--neon-cyan);
+    white-space: nowrap;
+  }
+
+  /* Watermark */
+  #watermark {
+    position: fixed; bottom: 14px; right: 18px; z-index: 5;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: rgba(0,245,255,0.35);
+    text-shadow: 0 0 8px var(--neon-cyan);
+    pointer-events: none;
+  }
+
+  /* Loading screen */
+  #loader {
+    position: fixed; inset: 0; z-index: 100;
+    background: #000008;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
+    transition: opacity 0.8s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+  #loader-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(18px,4vw,36px);
+    font-weight: 900;
+    letter-spacing: 8px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 30px var(--neon-cyan), 0 0 60px var(--neon-cyan);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  #loader-bar-wrap {
+    width: 280px; height: 3px;
+    background: rgba(0,245,255,0.15);
+    border-radius: 2px; overflow: hidden;
+  }
+  #loader-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 12px var(--neon-cyan);
+  }
+  #loader-status {
+    font-size: 11px; letter-spacing: 3px;
+    color: rgba(0,245,255,0.5);
+  }
 </style>
 </head>
-
 <body>
 
-<div id="ui">FPS: <span id="fps">0</span></div>
-<div id="wm">@sudipchdadi</div>
+<!-- Loader -->
+<div id="loader">
+  <div id="loader-title">AR HAND SYSTEM</div>
+  <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
+  <div id="loader-status">INITIALIZING SENSORS...</div>
+</div>
 
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
+<div id="app">
+  <!-- Backgrounds -->
+  <canvas id="starfield"></canvas>
+  <canvas id="matrix"></canvas>
+
+  <!-- Camera feed -->
+  <video id="video" playsinline autoplay muted></video>
+
+  <!-- Drawing canvas -->
+  <canvas id="canvas"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-corner tl"></div>
+    <div class="hud-corner tr"></div>
+    <div class="hud-corner bl"></div>
+    <div class="hud-corner br"></div>
+    <div class="scan-line"></div>
+  </div>
+
+  <!-- UI panels -->
+  <div id="title-bar">◈ NEURAL HAND TRACKING v2.0 ◈</div>
+
+  <div id="status-panel">
+    <div class="label">SYSTEM</div>
+    <div class="value active" id="stat-status">● ONLINE</div>
+    <div class="label" style="margin-top:6px">HANDS DETECTED</div>
+    <div class="value" id="stat-hands">0</div>
+    <div class="label" style="margin-top:6px">GESTURE</div>
+    <div class="value" id="stat-gesture">—</div>
+    <div class="label" style="margin-top:6px">PARTICLES</div>
+    <div class="value" id="stat-particles">0</div>
+  </div>
+
+  <div id="fps-box">
+    <span class="fps-num" id="fps-num">00</span>
+    <span class="fps-label">FPS</span>
+  </div>
+
+  <div id="gesture-display">GESTURE</div>
+  <div id="watermark">@sudipchdadi</div>
+</div>
 
 <script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const CFG = {
+  PARTICLE_LIFE: 55,
+  PARTICLE_COUNT: 7,
+  TRAIL_LENGTH: 22,
+  RIPPLE_MAX_R: 120,
+  GLOW_BLUR: 18,
+  LANDMARK_R: 5,
+  CONNECTION_W: 2.5,
+  ENERGY_BEAM_W: 4,
+};
 
-let w,h;
-function resize(){
-w = canvas.width = innerWidth;
-h = canvas.height = innerHeight;
+// ─── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  hands: [],
+  particles: [],
+  ripples: [],
+  trails: Array.from({length:2}, ()=> Array.from({length:21}, ()=>[])),
+  fps: 0,
+  fpsFrames: 0,
+  fpsLast: performance.now(),
+  hue: 0,
+  gestureText: '',
+  gestureClass: '',
+};
+
+// ─── CANVAS SETUP ─────────────────────────────────────────────────────────────
+const video   = document.getElementById('video');
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+const sfCanvas = document.getElementById('starfield');
+const sfCtx   = sfCanvas.getContext('2d');
+const mxCanvas = document.getElementById('matrix');
+const mxCtx   = mxCanvas.getContext('2d');
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  sfCanvas.width  = window.innerWidth;
+  sfCanvas.height = window.innerHeight;
+  mxCanvas.width  = window.innerWidth;
+  mxCanvas.height = window.innerHeight;
+  buildStars();
 }
-addEventListener("resize",resize);
+window.addEventListener('resize', resize);
 resize();
 
-let handsData=[];
-let particles=[];
-let fps=0,last=performance.now(),frames=0;
-
-function drawCamera(){
-ctx.save();
-ctx.scale(-1,1);
-ctx.drawImage(video,-w,0,w,h);
-ctx.restore();
+// ─── STARFIELD ────────────────────────────────────────────────────────────────
+let stars = [];
+function buildStars() {
+  stars = Array.from({length: 200}, () => ({
+    x: Math.random() * sfCanvas.width,
+    y: Math.random() * sfCanvas.height,
+    r: Math.random() * 1.5 + 0.2,
+    speed: Math.random() * 0.3 + 0.05,
+    alpha: Math.random() * 0.7 + 0.2,
+  }));
+}
+function drawStars() {
+  sfCtx.clearRect(0, 0, sfCanvas.width, sfCanvas.height);
+  for (const s of stars) {
+    sfCtx.beginPath();
+    sfCtx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    sfCtx.fillStyle = `rgba(180,220,255,${s.alpha})`;
+    sfCtx.fill();
+    s.y += s.speed;
+    if (s.y > sfCanvas.height) { s.y = 0; s.x = Math.random()*sfCanvas.width; }
+  }
 }
 
-function addParticle(x,y,color){
-particles.push({
-x,y,
-vx:(Math.random()-0.5)*2,
-vy:(Math.random()-0.5)*2,
-life:40,
-color
-});
+// ─── MATRIX RAIN ──────────────────────────────────────────────────────────────
+const COLS = Math.floor(window.innerWidth / 16);
+const drops = Array.from({length:COLS}, ()=> Math.random()*50 - 50);
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ﾊﾐﾋｰｳｼﾏﾑﾎﾂｹﾒｴｶｷﾑﾕﾗｾﾈｪｩｧ∑∆∫≠≡∞';
+function drawMatrix() {
+  mxCtx.fillStyle = 'rgba(0,0,8,0.05)';
+  mxCtx.fillRect(0,0,mxCanvas.width,mxCanvas.height);
+  mxCtx.font = '14px Share Tech Mono';
+  for (let i=0; i<drops.length; i++) {
+    const ch = CHARS[Math.floor(Math.random()*CHARS.length)];
+    const x = i*16, y = drops[i]*16;
+    const green = `rgba(0,${Math.random()>0.9?255:180},${Math.random()>0.9?255:80},0.9)`;
+    mxCtx.fillStyle = green;
+    mxCtx.fillText(ch, x, y);
+    if (y > mxCanvas.height && Math.random()>0.975) drops[i]=0;
+    drops[i]++;
+  }
 }
 
-function drawParticles(){
-for(let p of particles){
-p.x+=p.vx;
-p.y+=p.vy;
-p.life--;
-
-ctx.beginPath();
-ctx.fillStyle=p.color;
-ctx.shadowBlur=20;
-ctx.shadowColor=p.color;
-ctx.arc(p.x,p.y,3,0,Math.PI*2);
-ctx.fill();
+// ─── AUDIO ENGINE ─────────────────────────────────────────────────────────────
+let audioCtx;
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
-particles = particles.filter(p=>p.life>0);
+function playTone(freq=440, type='sine', duration=0.12, vol=0.08) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+  } catch(e){}
+}
+function playPinchSound() { playTone(880,'sine',0.25,0.1); playTone(440,'triangle',0.15,0.06); }
+function playBeamSound()  { playTone(220,'sawtooth',0.08,0.05); }
+
+// ─── MEDIAPIPE CONNECTIONS ─────────────────────────────────────────────────────
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17],[0,5]
+];
+
+// ─── GESTURE DETECTION ────────────────────────────────────────────────────────
+function landmarkToScreen(lm) {
+  return { x: (1 - lm.x) * canvas.width, y: lm.y * canvas.height };
+}
+function dist2D(a, b) {
+  return Math.hypot(a.x-b.x, a.y-b.y);
+}
+function detectGestures() {
+  state.gestureText = '';
+  state.gestureClass = '';
+
+  const gestures = [];
+
+  for (let h=0; h<state.hands.length; h++) {
+    const lms = state.hands[h].landmarks;
+    const thumb = landmarkToScreen(lms[4]);
+    const index = landmarkToScreen(lms[8]);
+    const pinchDist = dist2D(thumb, index);
+    const handW = dist2D(landmarkToScreen(lms[0]), landmarkToScreen(lms[9])) || 1;
+
+    const isPinch = pinchDist / handW < 0.45;
+
+    // Open hand: all fingertips above their MCP
+    const fingerTips = [8,12,16,20];
+    const fingerMCPs  = [6,10,14,18];
+    let openCount = 0;
+    for (let i=0;i<4;i++) {
+      if (lms[fingerTips[i]].y < lms[fingerMCPs[i]].y) openCount++;
+    }
+    const isOpen = openCount >= 3;
+
+    if (isPinch) {
+      gestures.push('PINCH');
+      // Ripple
+      if (Math.random() < 0.3) {
+        state.ripples.push({ x:(thumb.x+index.x)/2, y:(thumb.y+index.y)/2, r:0, life:1 });
+        playPinchSound();
+      }
+    } else if (isOpen) {
+      gestures.push('OPEN HAND');
+    }
+  }
+
+  // Energy beam between two hands
+  if (state.hands.length === 2) {
+    const i1 = landmarkToScreen(state.hands[0].landmarks[8]);
+    const i2 = landmarkToScreen(state.hands[1].landmarks[8]);
+    const beamDist = dist2D(i1, i2);
+    if (beamDist < canvas.width * 0.5) {
+      gestures.push('⚡ ENERGY BEAM');
+      playBeamSound();
+    }
+  }
+
+  if (gestures.length > 0) {
+    state.gestureText = gestures.join(' · ');
+    if (gestures[0] === 'PINCH') state.gestureClass = 'pinch';
+    else if (gestures[0] === 'OPEN HAND') state.gestureClass = 'open';
+    else state.gestureClass = 'beam';
+  }
+
+  const el = document.getElementById('gesture-display');
+  if (state.gestureText) {
+    el.textContent = state.gestureText;
+    el.className = 'show ' + state.gestureClass;
+  } else {
+    el.className = '';
+  }
+  document.getElementById('stat-gesture').textContent = state.gestureText || '—';
 }
 
-function onResults(res){
-handsData = res.multiHandLandmarks || [];
+// ─── COLOR HELPERS ────────────────────────────────────────────────────────────
+function neonColor(h, a=1) { return `hsla(${h},100%,60%,${a})`; }
+function rainbowAt(t) { return `hsl(${(t*360)%360},100%,60%)`; }
+
+// ─── PARTICLES ────────────────────────────────────────────────────────────────
+function spawnParticles(x, y, hue) {
+  for (let i=0; i<CFG.PARTICLE_COUNT; i++) {
+    const angle = Math.random()*Math.PI*2;
+    const speed = Math.random()*3 + 1;
+    state.particles.push({
+      x, y,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed - 1,
+      life: CFG.PARTICLE_LIFE,
+      maxLife: CFG.PARTICLE_LIFE,
+      hue,
+      r: Math.random()*3+1,
+    });
+  }
 }
 
-const hands = new Hands({
-locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
-});
-
-hands.setOptions({
-maxNumHands:2,
-modelComplexity:1,
-minDetectionConfidence:0.7,
-minTrackingConfidence:0.7
-});
-
-hands.onResults(onResults);
-
-const camera = new Camera(video,{
-onFrame:async()=>{
-await hands.send({image:video});
-},
-width:1280,
-height:720
-});
-camera.start();
-
-function drawHands(){
-if(!handsData.length) return;
-
-handsData.forEach(landmarks=>{
-const color=`hsl(${Date.now()/10%360},100%,60%)`;
-
-for(let i=0;i<landmarks.length;i++){
-const p=landmarks[i];
-const x=(1-p.x)*w;
-const y=p.y*h;
-
-ctx.beginPath();
-ctx.fillStyle=color;
-ctx.shadowBlur=25;
-ctx.shadowColor=color;
-ctx.arc(x,y,5,0,Math.PI*2);
-ctx.fill();
+function updateParticles() {
+  for (let i=state.particles.length-1; i>=0; i--) {
+    const p = state.particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.08;
+    p.life--;
+    if (p.life <= 0) state.particles.splice(i,1);
+  }
 }
 
-// pinch
-const thumb=landmarks[4];
-const index=landmarks[8];
-
-const dx=(1-thumb.x)*w-(1-index.x)*w;
-const dy=thumb.y*h-index.y*h;
-const d=Math.hypot(dx,dy);
-
-if(d<45){
-addParticle((1-index.x)*w,index.y*h,color);
+function drawParticles() {
+  for (const p of state.particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.shadowColor = neonColor(p.hue);
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = neonColor(p.hue);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * alpha, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
-});
+
+// ─── TRAILS ───────────────────────────────────────────────────────────────────
+function updateTrails() {
+  for (let h=0; h<state.hands.length; h++) {
+    const lms = state.hands[h].landmarks;
+    const tips = [4,8,12,16,20];
+    for (const t of tips) {
+      const sc = landmarkToScreen(lms[t]);
+      if (!state.trails[h]) state.trails[h] = Array.from({length:21},()=>[]);
+      state.trails[h][t].push({x:sc.x, y:sc.y});
+      if (state.trails[h][t].length > CFG.TRAIL_LENGTH) state.trails[h][t].shift();
+      // spawn particles at tips
+      if (Math.random()<0.4) spawnParticles(sc.x, sc.y, (state.hue + t*18) % 360);
+    }
+  }
 }
 
-function loop(){
-requestAnimationFrame(loop);
-
-// ✅ IMPORTANT: camera FIRST
-drawCamera();
-
-// overlays
-drawHands();
-drawParticles();
-
-// FPS
-frames++;
-let now=performance.now();
-if(now-last>=1000){
-fps=frames;
-frames=0;
-last=now;
-document.getElementById("fps").innerText=fps;
+function drawTrails() {
+  for (let h=0; h<2; h++) {
+    if (!state.trails[h]) continue;
+    const tips = [4,8,12,16,20];
+    for (const t of tips) {
+      const trail = state.trails[h][t];
+      if (trail.length < 2) continue;
+      ctx.save();
+      for (let i=1; i<trail.length; i++) {
+        const alpha = i / trail.length;
+        const hue = (state.hue + t*18 + i*4) % 360;
+        ctx.beginPath();
+        ctx.moveTo(trail[i-1].x, trail[i-1].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.strokeStyle = neonColor(hue, alpha);
+        ctx.lineWidth = alpha * 3;
+        ctx.shadowColor = neonColor(hue);
+        ctx.shadowBlur = 12 * alpha;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
 }
+
+// ─── RIPPLES ──────────────────────────────────────────────────────────────────
+function updateRipples() {
+  for (let i=state.ripples.length-1; i>=0; i--) {
+    const rp = state.ripples[i];
+    rp.r += 4;
+    rp.life -= 0.025;
+    if (rp.life <= 0 || rp.r > CFG.RIPPLE_MAX_R) state.ripples.splice(i,1);
+  }
 }
-loop();
+
+function drawRipples() {
+  for (const rp of state.ripples) {
+    ctx.save();
+    ctx.globalAlpha = rp.life * 0.8;
+    ctx.strokeStyle = neonColor(state.hue + 120, rp.life);
+    ctx.lineWidth = 2;
+    ctx.shadowColor = neonColor(state.hue + 120);
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI*2);
+    ctx.stroke();
+    // secondary ring
+    ctx.globalAlpha = rp.life * 0.4;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r*1.5, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── DRAW SKELETON ────────────────────────────────────────────────────────────
+function drawSkeleton(lms, handIdx) {
+  const hueBase = state.hue + handIdx * 180;
+
+  // Connections
+  for (const [a,b] of CONNECTIONS) {
+    const pa = landmarkToScreen(lms[a]);
+    const pb = landmarkToScreen(lms[b]);
+    const hue = (hueBase + a*5) % 360;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.strokeStyle = neonColor(hue, 0.85);
+    ctx.lineWidth = CFG.CONNECTION_W;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = neonColor(hue);
+    ctx.shadowBlur = CFG.GLOW_BLUR;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Landmarks
+  for (let i=0; i<lms.length; i++) {
+    const pt = landmarkToScreen(lms[i]);
+    const hue = (hueBase + i*10) % 360;
+    const isTip = [4,8,12,16,20].includes(i);
+    const r = isTip ? CFG.LANDMARK_R + 2 : CFG.LANDMARK_R;
+
+    ctx.save();
+    // outer glow ring
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, r+4, 0, Math.PI*2);
+    ctx.strokeStyle = neonColor(hue, 0.3);
+    ctx.lineWidth = 2;
+    ctx.shadowColor = neonColor(hue);
+    ctx.shadowBlur = 20;
+    ctx.stroke();
+    // core dot
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, r, 0, Math.PI*2);
+    ctx.fillStyle = neonColor(hue);
+    ctx.shadowBlur = 25;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ─── ENERGY BEAM ──────────────────────────────────────────────────────────────
+function drawEnergyBeam() {
+  if (state.hands.length < 2) return;
+  const p1 = landmarkToScreen(state.hands[0].landmarks[8]);
+  const p2 = landmarkToScreen(state.hands[1].landmarks[8]);
+  const beamDist = dist2D(p1, p2);
+  if (beamDist > canvas.width * 0.5) return;
+
+  const t = performance.now() / 400;
+
+  ctx.save();
+  // Core beam
+  for (let layer = 3; layer >= 0; layer--) {
+    const hue = (state.hue + layer * 30) % 360;
+    const w = (CFG.ENERGY_BEAM_W + layer * 3) * (0.8 + 0.2*Math.sin(t));
+    ctx.beginPath();
+    // Wobble the midpoint
+    const mx = (p1.x+p2.x)/2 + Math.sin(t*2.3+layer)*20;
+    const my = (p1.y+p2.y)/2 + Math.cos(t*1.7+layer)*20;
+    ctx.moveTo(p1.x, p1.y);
+    ctx.quadraticCurveTo(mx, my, p2.x, p2.y);
+    ctx.strokeStyle = neonColor(hue, 0.6 - layer*0.1);
+    ctx.lineWidth = w;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = neonColor(hue);
+    ctx.shadowBlur = 30;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.stroke();
+  }
+  // Spark particles along beam
+  if (Math.random() < 0.6) {
+    const bx = p1.x + (p2.x-p1.x)*Math.random();
+    const by = p1.y + (p2.y-p1.y)*Math.random();
+    spawnParticles(bx, by, (state.hue+60)%360);
+  }
+  ctx.restore();
+}
+
+// ─── FPS COUNTER ──────────────────────────────────────────────────────────────
+function updateFPS(now) {
+  state.fpsFrames++;
+  if (now - state.fpsLast >= 1000) {
+    state.fps = state.fpsFrames;
+    state.fpsFrames = 0;
+    state.fpsLast = now;
+    document.getElementById('fps-num').textContent = String(state.fps).padStart(2,'0');
+    const el = document.getElementById('fps-num');
+    el.style.color = state.fps >= 50 ? 'var(--neon-green)' : state.fps >= 30 ? 'var(--neon-orange)' : '#ff4444';
+    el.style.textShadow = `0 0 16px ${state.fps>=50?'var(--neon-green)':state.fps>=30?'var(--neon-orange)':'#ff4444'}`;
+  }
+}
+
+// ─── MAIN RENDER LOOP ─────────────────────────────────────────────────────────
+function render(now) {
+  requestAnimationFrame(render);
+  updateFPS(now);
+  state.hue = (state.hue + 0.8) % 360;
+
+  // Background layers
+  drawStars();
+  drawMatrix();
+
+  // Main canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Slight vignette
+  const vg = ctx.createRadialGradient(canvas.width/2,canvas.height/2,canvas.height*0.3,canvas.width/2,canvas.height/2,canvas.height*0.85);
+  vg.addColorStop(0,'rgba(0,0,0,0)');
+  vg.addColorStop(1,'rgba(0,0,20,0.55)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Update physics
+  updateParticles();
+  updateRipples();
+  if (state.hands.length > 0) updateTrails();
+
+  // Draw
+  drawTrails();
+  drawEnergyBeam();
+  drawParticles();
+  drawRipples();
+
+  for (let h=0; h<state.hands.length; h++) {
+    drawSkeleton(state.hands[h].landmarks, h);
+  }
+
+  // Detect gestures
+  detectGestures();
+
+  // UI stats
+  document.getElementById('stat-hands').textContent = state.hands.length;
+  document.getElementById('stat-particles').textContent = state.particles.length;
+}
+
+// ─── MEDIAPIPE SETUP ──────────────────────────────────────────────────────────
+function setupMediaPipe() {
+  const hands = new Hands({
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6,
+  });
+  hands.onResults(results => {
+    state.hands = [];
+    if (results.multiHandLandmarks) {
+      for (let h=0; h<results.multiHandLandmarks.length; h++) {
+        state.hands.push({ landmarks: results.multiHandLandmarks[h] });
+      }
+    }
+    // Clear trails for missing hands
+    for (let h=state.hands.length; h<2; h++) {
+      if (state.trails[h]) {
+        for (let t=0; t<21; t++) {
+          if (state.trails[h][t]) state.trails[h][t] = [];
+        }
+      }
+    }
+  });
+
+  const camera = new Camera(video, {
+    onFrame: async () => { await hands.send({image: video}); },
+    width: 1280, height: 720
+  });
+  camera.start();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  const bar = document.getElementById('loader-bar');
+  const status = document.getElementById('loader-status');
+  const steps = [
+    [20,'LOADING NEURAL NETWORK...'],
+    [45,'CALIBRATING SENSORS...'],
+    [70,'INITIALIZING MEDIAPIPE...'],
+    [90,'STARTING CAMERA...'],
+    [100,'SYSTEM READY'],
+  ];
+  for (const [pct, msg] of steps) {
+    bar.style.width = pct + '%';
+    status.textContent = msg;
+    await new Promise(r=>setTimeout(r,400));
+  }
+
+  document.addEventListener('click', () => { if (!audioCtx) initAudio(); }, { once: true });
+  document.addEventListener('touchstart', () => { if (!audioCtx) initAudio(); }, { once: true });
+
+  setupMediaPipe();
+  requestAnimationFrame(render);
+
+  setTimeout(() => {
+    document.getElementById('loader').classList.add('hidden');
+  }, 600);
+}
+
+init();
 </script>
-
 </body>
 </html>
