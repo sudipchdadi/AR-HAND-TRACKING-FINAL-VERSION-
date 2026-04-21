@@ -1,180 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Advanced Hand Tracking AR</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hand Tracking AR Web App</title>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
 <style>
-body { margin:0; overflow:hidden; background:#000; }
-canvas, video { position:absolute; width:100%; height:100%; }
-video { transform:scaleX(-1); }
-canvas { transform:scaleX(-1); }
+html,body{
+margin:0;
+padding:0;
+overflow:hidden;
+background:#000;
+font-family:monospace;
+}
+video{
+position:absolute;
+transform: scaleX(-1);
+display:none;
+}
+canvas{
+position:absolute;
+top:0;
+left:0;
+}
+#ui{
+position:fixed;
+top:10px;
+left:10px;
+color:#0ff;
+font-size:14px;
+z-index:10;
+text-shadow:0 0 10px #0ff;
+}
+#watermark{
+position:fixed;
+bottom:10px;
+right:10px;
+color:#0ff;
+opacity:0.7;
+font-size:14px;
+text-shadow:0 0 10px #0ff;
+}
 </style>
 </head>
 
 <body>
+<div id="ui">FPS: <span id="fps">0</span></div>
+<div id="watermark">@sudipchdadi</div>
 
-<video class="input_video" autoplay playsinline></video>
-<canvas id="bg"></canvas>
-<canvas id="main"></canvas>
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
 
 <script>
-const video = document.querySelector("video");
-const bg = document.getElementById("bg");
-const main = document.getElementById("main");
-const bgCtx = bg.getContext("2d");
-const ctx = main.getContext("2d");
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-let w, h;
+let w,h;
 function resize(){
-w = innerWidth; h = innerHeight;
-bg.width = main.width = w;
-bg.height = main.height = h;
+w = canvas.width = window.innerWidth;
+h = canvas.height = window.innerHeight;
 }
+window.addEventListener("resize",resize);
 resize();
-addEventListener("resize", resize);
 
-let handsData = [];
-let lastPinch = [false,false];
+let fps = 0, last = performance.now(), frames = 0;
 
-let drawing = false;
-let points = [];
-let mode = "normal";
+const particles = [];
+const stars = Array.from({length:200},()=>({
+x:Math.random()*w,
+y:Math.random()*h,
+z:Math.random()*w
+}));
 
-function dist(a,b){
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function beep(freq=440){
+const o = audioCtx.createOscillator();
+const g = audioCtx.createGain();
+o.connect(g); g.connect(audioCtx.destination);
+o.frequency.value=freq;
+g.gain.value=0.05;
+o.start();
+o.stop(audioCtx.currentTime+0.1);
+}
+
+function drawStarfield(){
+ctx.fillStyle="#000";
+ctx.fillRect(0,0,w,h);
+
+for(let s of stars){
+s.z -= 2;
+if(s.z<=0) s.z=w;
+
+let k=128/s.z;
+let x=(s.x-w/2)*k + w/2;
+let y=(s.y-h/2)*k + h/2;
+
+if(x<0||x>w||y<0||y>h) continue;
+
+ctx.fillStyle="rgba(0,255,255,0.5)";
+ctx.fillRect(x,y,2,2);
+}
+}
+
+function addParticle(x,y,color){
+particles.push({
+x,y,
+vx:(Math.random()-0.5)*3,
+vy:(Math.random()-0.5)*3,
+life:60,
+color
+});
+}
+
+function drawParticles(){
+for(let p of particles){
+p.x+=p.vx;
+p.y+=p.vy;
+p.life--;
+
+ctx.beginPath();
+ctx.fillStyle=p.color;
+ctx.shadowBlur=20;
+ctx.shadowColor=p.color;
+ctx.arc(p.x,p.y,3,0,Math.PI*2);
+ctx.fill();
+}
+
+for(let i=particles.length-1;i>=0;i--){
+if(particles[i].life<=0) particles.splice(i,1);
+}
+}
+
+function distance(a,b){
 return Math.hypot(a.x-b.x,a.y-b.y);
 }
 
-function map(p){ return {x:p.x*w, y:p.y*h}; }
+let handData=[];
 
-function drawWatermark(){
-ctx.save();
-ctx.globalAlpha = 0.4;
-ctx.font = "20px monospace";
-ctx.fillStyle = "#00ffff";
-ctx.fillText("@sudipchdadi",20,h-30);
-ctx.restore();
+function onResults(results){
+handData = results.multiHandLandmarks || [];
 }
 
-function drawPortal(a,b){
-let cx=(a.x+b.x)/2, cy=(a.y+b.y)/2;
-let r=dist(a,b)*200;
-
-ctx.beginPath();
-ctx.arc(cx,cy,r,0,Math.PI*2);
-
-let g=ctx.createRadialGradient(cx,cy,10,cx,cy,r);
-g.addColorStop(0,"rgba(0,255,255,0.8)");
-g.addColorStop(0.5,"rgba(255,0,255,0.3)");
-g.addColorStop(1,"transparent");
-
-ctx.fillStyle=g;
-ctx.fill();
-}
-
-function updateGesture(){
-if(!handsData.length) return;
-
-handsData.forEach((h,i)=>{
-let t=h[4], idx=h[8];
-let d=dist(t,idx);
-let pinch=d<0.05;
-
-if(pinch && !lastPinch[i]){
-drawing=!drawing;
-mode = drawing ? "draw" : "normal";
-}
-
-lastPinch[i]=pinch;
-});
-
-if(handsData[0]){
-let spread = dist(handsData[0][8],handsData[0][20]);
-
-if(spread>0.25) mode="portal";
-else if(!drawing) mode="normal";
-}
-}
-
-function draw(){
-requestAnimationFrame(draw);
-
-ctx.fillStyle="rgba(0,0,0,0.15)";
-ctx.fillRect(0,0,w,h);
-
-updateGesture();
-
-if(handsData.length){
-
-let h = handsData[0];
-
-// ✍️ DRAW MODE
-if(mode==="draw"){
-let p = map(h[8]);
-points.push(p);
-
-ctx.beginPath();
-for(let i=1;i<points.length;i++){
-ctx.moveTo(points[i-1].x,points[i-1].y);
-ctx.lineTo(points[i].x,points[i].y);
-}
-ctx.strokeStyle="cyan";
-ctx.lineWidth=3;
-ctx.shadowBlur=10;
-ctx.shadowColor="cyan";
-ctx.stroke();
-}
-
-// 🌀 PORTAL MODE
-if(mode==="portal" && handsData.length>1){
-drawPortal(map(handsData[0][8]), map(handsData[1][8]));
-}
-
-// skeleton
-handsData.forEach(h=>{
-h.forEach(p=>{
-let pt=map(p);
-ctx.beginPath();
-ctx.arc(pt.x,pt.y,3,0,Math.PI*2);
-ctx.fillStyle="#fff";
-ctx.fill();
-});
-});
-}
-
-drawWatermark();
-}
-
-const hands = new Hands({
-locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
-});
+const hands = new Hands({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
 
 hands.setOptions({
 maxNumHands:2,
+modelComplexity:1,
 minDetectionConfidence:0.7,
 minTrackingConfidence:0.7
 });
 
-hands.onResults(res=>{
-handsData = res.multiHandLandmarks || [];
-});
+hands.onResults(onResults);
 
-const cam = new Camera(video,{
-onFrame: async ()=>{
+const camera = new Camera(video,{
+onFrame:async()=>{
 await hands.send({image:video});
 },
 width:1280,
 height:720
 });
-cam.start();
+camera.start();
 
-draw();
+function drawHands(){
+if(!handData.length) return;
+
+handData.forEach((landmarks,idx)=>{
+const color = `hsl(${(Date.now()/10)%360},100%,60%)`;
+
+for(let i=0;i<landmarks.length;i++){
+const p = landmarks[i];
+const x = (1-p.x)*w;
+const y = p.y*h;
+
+ctx.beginPath();
+ctx.fillStyle=color;
+ctx.shadowBlur=20;
+ctx.shadowColor=color;
+ctx.arc(x,y,5,0,Math.PI*2);
+ctx.fill();
+
+if(i>0){
+const prev = landmarks[i-1];
+const x2 = (1-prev.x)*w;
+const y2 = prev.y*h;
+
+ctx.beginPath();
+ctx.strokeStyle=color;
+ctx.shadowBlur=15;
+ctx.lineWidth=2;
+ctx.moveTo(x,y);
+ctx.lineTo(x2,y2);
+ctx.stroke();
+}
+}
+
+// pinch detection
+const thumb = landmarks[4];
+const index = landmarks[8];
+const dx = (1-thumb.x)*w - (1-index.x)*w;
+const dy = thumb.y*h - index.y*h;
+const d = Math.hypot(dx,dy);
+
+if(d<40){
+addParticle((1-index.x)*w,index.y*h,color);
+beep(600);
+
+// shockwave
+ctx.beginPath();
+ctx.strokeStyle=color;
+ctx.shadowBlur=30;
+ctx.arc((1-index.x)*w,index.y*h,50-d,0,Math.PI*2);
+ctx.stroke();
+}
+
+// fingertip trails
+[4,8,12,16,20].forEach(i=>{
+addParticle((1-landmarks[i].x)*w,landmarks[i].y*h,color);
+});
+});
+}
+
+function loop(){
+requestAnimationFrame(loop);
+
+drawStarfield();
+drawHands();
+drawParticles();
+
+// FPS
+frames++;
+let now = performance.now();
+if(now-last>=1000){
+fps = frames;
+frames=0;
+last=now;
+document.getElementById("fps").innerText=fps;
+}
+}
+loop();
 </script>
-
 </body>
 </html>
