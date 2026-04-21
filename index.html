@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Hand Tracking AR Fix</title>
+<title>AR Hand Tracking Fix</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -12,13 +12,11 @@
 <style>
 html,body{
 margin:0;
-padding:0;
 overflow:hidden;
 background:#000;
-font-family:monospace;
 }
 canvas{
-position:absolute;
+position:fixed;
 top:0;
 left:0;
 }
@@ -30,8 +28,8 @@ position:fixed;
 top:10px;
 left:10px;
 color:#0ff;
+font-family:monospace;
 z-index:10;
-text-shadow:0 0 10px #0ff;
 }
 #wm{
 position:fixed;
@@ -39,7 +37,7 @@ bottom:10px;
 right:10px;
 color:#0ff;
 opacity:0.7;
-text-shadow:0 0 10px #0ff;
+font-family:monospace;
 }
 </style>
 </head>
@@ -65,32 +63,15 @@ h = canvas.height = innerHeight;
 addEventListener("resize",resize);
 resize();
 
-let handsData = [];
-let particles = [];
-
+let handsData=[];
+let particles=[];
 let fps=0,last=performance.now(),frames=0;
 
-const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-
-function beep(freq){
-const o=audioCtx.createOscillator();
-const g=audioCtx.createGain();
-o.connect(g); g.connect(audioCtx.destination);
-o.frequency.value=freq;
-g.gain.value=0.03;
-o.start();
-o.stop(audioCtx.currentTime+0.08);
-}
-
-function drawBackground(){
+function drawCamera(){
 ctx.save();
 ctx.scale(-1,1);
 ctx.drawImage(video,-w,0,w,h);
 ctx.restore();
-
-// dark futuristic overlay
-ctx.fillStyle="rgba(0,0,0,0.25)";
-ctx.fillRect(0,0,w,h);
 }
 
 function addParticle(x,y,color){
@@ -98,7 +79,7 @@ particles.push({
 x,y,
 vx:(Math.random()-0.5)*2,
 vy:(Math.random()-0.5)*2,
-life:50,
+life:40,
 color
 });
 }
@@ -116,12 +97,7 @@ ctx.shadowColor=p.color;
 ctx.arc(p.x,p.y,3,0,Math.PI*2);
 ctx.fill();
 }
-
 particles = particles.filter(p=>p.life>0);
-}
-
-function dist(a,b){
-return Math.hypot(a.x-b.x,a.y-b.y);
 }
 
 function onResults(res){
@@ -154,68 +130,42 @@ function drawHands(){
 if(!handsData.length) return;
 
 handsData.forEach(landmarks=>{
-const color = `hsl(${(Date.now()/10)%360},100%,60%)`;
+const color=`hsl(${Date.now()/10%360},100%,60%)`;
 
 for(let i=0;i<landmarks.length;i++){
-const p = landmarks[i];
-const x = (1-p.x)*w;
-const y = p.y*h;
+const p=landmarks[i];
+const x=(1-p.x)*w;
+const y=p.y*h;
 
-// glow point
 ctx.beginPath();
 ctx.fillStyle=color;
 ctx.shadowBlur=25;
 ctx.shadowColor=color;
 ctx.arc(x,y,5,0,Math.PI*2);
 ctx.fill();
-
-// skeleton line
-if(i>0){
-const prev = landmarks[i-1];
-const x2 = (1-prev.x)*w;
-const y2 = prev.y*h;
-
-ctx.beginPath();
-ctx.strokeStyle=color;
-ctx.shadowBlur=15;
-ctx.lineWidth=2;
-ctx.moveTo(x,y);
-ctx.lineTo(x2,y2);
-ctx.stroke();
-}
 }
 
-// pinch detect
-const thumb = landmarks[4];
-const index = landmarks[8];
+// pinch
+const thumb=landmarks[4];
+const index=landmarks[8];
 
-const dx = (1-thumb.x)*w - (1-index.x)*w;
-const dy = thumb.y*h - index.y*h;
-const d = Math.hypot(dx,dy);
+const dx=(1-thumb.x)*w-(1-index.x)*w;
+const dy=thumb.y*h-index.y*h;
+const d=Math.hypot(dx,dy);
 
 if(d<45){
-beep(700);
 addParticle((1-index.x)*w,index.y*h,color);
-
-// shockwave
-ctx.beginPath();
-ctx.strokeStyle=color;
-ctx.shadowBlur=30;
-ctx.arc((1-index.x)*w,index.y*h,60,0,Math.PI*2);
-ctx.stroke();
 }
-
-// fingertip trails
-[4,8,12,16,20].forEach(i=>{
-addParticle((1-landmarks[i].x)*w,landmarks[i].y*h,color);
-});
 });
 }
 
 function loop(){
 requestAnimationFrame(loop);
 
-drawBackground();
+// ✅ IMPORTANT: camera FIRST
+drawCamera();
+
+// overlays
 drawHands();
 drawParticles();
 
