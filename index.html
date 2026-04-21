@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Hand Tracking AR Web App</title>
+<title>Hand Tracking AR Fix</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -17,40 +17,37 @@ overflow:hidden;
 background:#000;
 font-family:monospace;
 }
-video{
-position:absolute;
-transform: scaleX(-1);
-display:none;
-}
 canvas{
 position:absolute;
 top:0;
 left:0;
+}
+video{
+display:none;
 }
 #ui{
 position:fixed;
 top:10px;
 left:10px;
 color:#0ff;
-font-size:14px;
 z-index:10;
 text-shadow:0 0 10px #0ff;
 }
-#watermark{
+#wm{
 position:fixed;
 bottom:10px;
 right:10px;
 color:#0ff;
 opacity:0.7;
-font-size:14px;
 text-shadow:0 0 10px #0ff;
 }
 </style>
 </head>
 
 <body>
+
 <div id="ui">FPS: <span id="fps">0</span></div>
-<div id="watermark">@sudipchdadi</div>
+<div id="wm">@sudipchdadi</div>
 
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
@@ -62,58 +59,46 @@ const ctx = canvas.getContext("2d");
 
 let w,h;
 function resize(){
-w = canvas.width = window.innerWidth;
-h = canvas.height = window.innerHeight;
+w = canvas.width = innerWidth;
+h = canvas.height = innerHeight;
 }
-window.addEventListener("resize",resize);
+addEventListener("resize",resize);
 resize();
 
-let fps = 0, last = performance.now(), frames = 0;
+let handsData = [];
+let particles = [];
 
-const particles = [];
-const stars = Array.from({length:200},()=>({
-x:Math.random()*w,
-y:Math.random()*h,
-z:Math.random()*w
-}));
+let fps=0,last=performance.now(),frames=0;
 
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
 
-function beep(freq=440){
-const o = audioCtx.createOscillator();
-const g = audioCtx.createGain();
+function beep(freq){
+const o=audioCtx.createOscillator();
+const g=audioCtx.createGain();
 o.connect(g); g.connect(audioCtx.destination);
 o.frequency.value=freq;
-g.gain.value=0.05;
+g.gain.value=0.03;
 o.start();
-o.stop(audioCtx.currentTime+0.1);
+o.stop(audioCtx.currentTime+0.08);
 }
 
-function drawStarfield(){
-ctx.fillStyle="#000";
+function drawBackground(){
+ctx.save();
+ctx.scale(-1,1);
+ctx.drawImage(video,-w,0,w,h);
+ctx.restore();
+
+// dark futuristic overlay
+ctx.fillStyle="rgba(0,0,0,0.25)";
 ctx.fillRect(0,0,w,h);
-
-for(let s of stars){
-s.z -= 2;
-if(s.z<=0) s.z=w;
-
-let k=128/s.z;
-let x=(s.x-w/2)*k + w/2;
-let y=(s.y-h/2)*k + h/2;
-
-if(x<0||x>w||y<0||y>h) continue;
-
-ctx.fillStyle="rgba(0,255,255,0.5)";
-ctx.fillRect(x,y,2,2);
-}
 }
 
 function addParticle(x,y,color){
 particles.push({
 x,y,
-vx:(Math.random()-0.5)*3,
-vy:(Math.random()-0.5)*3,
-life:60,
+vx:(Math.random()-0.5)*2,
+vy:(Math.random()-0.5)*2,
+life:50,
 color
 });
 }
@@ -132,22 +117,20 @@ ctx.arc(p.x,p.y,3,0,Math.PI*2);
 ctx.fill();
 }
 
-for(let i=particles.length-1;i>=0;i--){
-if(particles[i].life<=0) particles.splice(i,1);
-}
+particles = particles.filter(p=>p.life>0);
 }
 
-function distance(a,b){
+function dist(a,b){
 return Math.hypot(a.x-b.x,a.y-b.y);
 }
 
-let handData=[];
-
-function onResults(results){
-handData = results.multiHandLandmarks || [];
+function onResults(res){
+handsData = res.multiHandLandmarks || [];
 }
 
-const hands = new Hands({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+const hands = new Hands({
+locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+});
 
 hands.setOptions({
 maxNumHands:2,
@@ -168,9 +151,9 @@ height:720
 camera.start();
 
 function drawHands(){
-if(!handData.length) return;
+if(!handsData.length) return;
 
-handData.forEach((landmarks,idx)=>{
+handsData.forEach(landmarks=>{
 const color = `hsl(${(Date.now()/10)%360},100%,60%)`;
 
 for(let i=0;i<landmarks.length;i++){
@@ -178,13 +161,15 @@ const p = landmarks[i];
 const x = (1-p.x)*w;
 const y = p.y*h;
 
+// glow point
 ctx.beginPath();
 ctx.fillStyle=color;
-ctx.shadowBlur=20;
+ctx.shadowBlur=25;
 ctx.shadowColor=color;
 ctx.arc(x,y,5,0,Math.PI*2);
 ctx.fill();
 
+// skeleton line
 if(i>0){
 const prev = landmarks[i-1];
 const x2 = (1-prev.x)*w;
@@ -200,22 +185,23 @@ ctx.stroke();
 }
 }
 
-// pinch detection
+// pinch detect
 const thumb = landmarks[4];
 const index = landmarks[8];
+
 const dx = (1-thumb.x)*w - (1-index.x)*w;
 const dy = thumb.y*h - index.y*h;
 const d = Math.hypot(dx,dy);
 
-if(d<40){
+if(d<45){
+beep(700);
 addParticle((1-index.x)*w,index.y*h,color);
-beep(600);
 
 // shockwave
 ctx.beginPath();
 ctx.strokeStyle=color;
 ctx.shadowBlur=30;
-ctx.arc((1-index.x)*w,index.y*h,50-d,0,Math.PI*2);
+ctx.arc((1-index.x)*w,index.y*h,60,0,Math.PI*2);
 ctx.stroke();
 }
 
@@ -229,15 +215,15 @@ addParticle((1-landmarks[i].x)*w,landmarks[i].y*h,color);
 function loop(){
 requestAnimationFrame(loop);
 
-drawStarfield();
+drawBackground();
 drawHands();
 drawParticles();
 
 // FPS
 frames++;
-let now = performance.now();
+let now=performance.now();
 if(now-last>=1000){
-fps = frames;
+fps=frames;
 frames=0;
 last=now;
 document.getElementById("fps").innerText=fps;
@@ -245,5 +231,6 @@ document.getElementById("fps").innerText=fps;
 }
 loop();
 </script>
+
 </body>
 </html>
