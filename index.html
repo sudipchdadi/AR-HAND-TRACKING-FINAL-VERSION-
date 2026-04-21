@@ -3,72 +3,160 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AR Hand Tracking v3</title>
+<title>AR Hand Tracking v3 — Holographic + Paint</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --cyan:#00f5ff;--pink:#ff00aa;--green:#00ff88;--orange:#ff6600;--purple:#aa00ff;
-  --bg:#000008;--panel:rgba(0,8,24,0.82);--border:rgba(0,245,255,0.22);
+  --bg:#000008;--panel:rgba(0,8,24,0.78);--border:rgba(0,245,255,0.22);
 }
 html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;font-family:'Share Tech Mono',monospace;color:var(--cyan)}
 #app{position:relative;width:100vw;height:100vh}
-#starfield,#matrix{position:fixed;inset:0;pointer-events:none}
-#starfield{z-index:0}#matrix{z-index:1;opacity:.10}
-#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);filter:brightness(1.3) contrast(1.15);z-index:2}
-#canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
-#paint-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;cursor:crosshair}
-#holo-panel{position:fixed;bottom:80px;right:16px;z-index:6;width:150px;height:190px;background:var(--panel);border:1px solid var(--border);border-radius:8px;backdrop-filter:blur(8px);overflow:hidden;display:flex;flex-direction:column;align-items:center}
-#holo-label{font-size:9px;letter-spacing:3px;color:rgba(0,245,255,.45);padding:6px 0 2px;text-transform:uppercase}
-#holo-canvas{width:150px;height:165px;display:block}
-#hud{position:fixed;inset:0;z-index:5;pointer-events:none}
-.hud-corner{position:absolute;width:52px;height:52px;border-color:var(--cyan);border-style:solid;opacity:.55}
-.hud-corner.tl{top:14px;left:14px;border-width:2px 0 0 2px}.hud-corner.tr{top:14px;right:14px;border-width:2px 2px 0 0}
-.hud-corner.bl{bottom:14px;left:14px;border-width:0 0 2px 2px}.hud-corner.br{bottom:14px;right:14px;border-width:0 2px 2px 0}
-.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);animation:scan 4s linear infinite;opacity:.28}
-@keyframes scan{0%{top:0}100%{top:100%}}
-#status-panel{position:fixed;top:16px;left:16px;z-index:7;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:10px 14px;font-size:11px;line-height:2;backdrop-filter:blur(6px);text-shadow:0 0 8px var(--cyan);min-width:175px}
-.lbl{color:rgba(0,245,255,.42);font-size:9px;text-transform:uppercase;letter-spacing:2px}
-.val{color:var(--cyan)}.val.on{color:var(--green)}.val.warn{color:var(--orange)}
-#fps-box{position:fixed;top:16px;right:16px;z-index:7;background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:6px 12px;backdrop-filter:blur(6px);text-align:center}
-#fps-num{font-family:'Orbitron',sans-serif;font-size:24px;font-weight:900;color:var(--green);text-shadow:0 0 12px var(--green);display:block}
-.fps-lbl{font-size:8px;letter-spacing:3px;color:rgba(0,255,136,.4)}
-#gesture-display{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);z-index:7;font-family:'Orbitron',sans-serif;font-size:14px;font-weight:700;letter-spacing:4px;padding:8px 24px;border-radius:40px;border:1px solid var(--border);background:var(--panel);backdrop-filter:blur(8px);transition:all .3s;text-shadow:0 0 16px currentColor;pointer-events:none;opacity:0;white-space:nowrap}
-#gesture-display.show{opacity:1}
-#gesture-display.pinch{color:var(--pink);border-color:var(--pink);box-shadow:0 0 24px rgba(255,0,170,.3)}
-#gesture-display.open{color:var(--green);border-color:var(--green);box-shadow:0 0 24px rgba(0,255,136,.3)}
-#gesture-display.beam{color:var(--orange);border-color:var(--orange);box-shadow:0 0 24px rgba(255,102,0,.4)}
-#gesture-display.paint{color:var(--purple);border-color:var(--purple);box-shadow:0 0 24px rgba(170,0,255,.4)}
-#title-bar{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:7;font-family:'Orbitron',sans-serif;font-size:11px;font-weight:700;letter-spacing:5px;color:rgba(0,245,255,.5);text-shadow:0 0 10px var(--cyan);white-space:nowrap}
-#mode-bar{position:fixed;bottom:34px;right:16px;z-index:8;display:flex;flex-direction:column;gap:7px}
-.mode-btn{font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:2px;padding:7px 11px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:rgba(0,245,255,.55);cursor:pointer;backdrop-filter:blur(6px);transition:all .2s;white-space:nowrap}
-.mode-btn:hover,.mode-btn.active{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 12px rgba(0,245,255,.25)}
-.mode-btn.active{background:rgba(0,245,255,.07)}
-#paint-toolbar{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;z-index:8;background:var(--panel);border:1px solid var(--border);border-radius:30px;padding:8px 14px;display:flex;align-items:center;gap:10px;backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .3s}
-#paint-toolbar.visible{opacity:1;pointer-events:auto}
-.color-swatch{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:transform .15s,border-color .15s;flex-shrink:0}
-.color-swatch:hover,.color-swatch.sel{transform:scale(1.35);border-color:#fff}
-.paint-tool-btn{font-size:8px;letter-spacing:2px;font-family:'Orbitron',sans-serif;padding:5px 9px;border-radius:20px;border:1px solid var(--border);background:transparent;color:rgba(0,245,255,.65);cursor:pointer;transition:all .2s}
-.paint-tool-btn:hover{border-color:var(--cyan);color:var(--cyan)}
-#brush-size{width:60px;accent-color:var(--cyan);cursor:pointer}
-#watermark{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:7;font-family:'Orbitron',sans-serif;font-size:9px;font-weight:700;letter-spacing:3px;color:rgba(0,245,255,.28);text-shadow:0 0 8px var(--cyan);pointer-events:none}
 
-/* Loader */
-#loader{position:fixed;inset:0;z-index:100;background:#000008;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity 1s ease}
+/* ── Backgrounds ── */
+#starfield,#matrix{position:fixed;inset:0;pointer-events:none}
+#starfield{z-index:0}
+#matrix{z-index:1;opacity:.12}
+
+/* ── Camera ── */
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);filter:brightness(1.35) contrast(1.18) saturate(1.1);z-index:2}
+
+/* ── Main AR canvas ── */
+#canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+
+/* ── Paint canvas (above AR, pointer events ON in paint mode) ── */
+#paint-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;cursor:crosshair}
+
+/* ── Hologram panel (mini WebGL avatar) ── */
+#holo-panel{
+  position:fixed;bottom:80px;right:20px;z-index:6;
+  width:160px;height:200px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:8px;
+  backdrop-filter:blur(8px);
+  overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;
+}
+#holo-label{
+  font-size:9px;letter-spacing:3px;color:rgba(0,245,255,.5);
+  padding:6px 0 2px;text-transform:uppercase;
+}
+#holo-canvas{width:160px;height:170px;display:block}
+
+/* ── HUD ── */
+#hud{position:fixed;inset:0;z-index:5;pointer-events:none}
+.hud-corner{position:absolute;width:56px;height:56px;border-color:var(--cyan);border-style:solid;opacity:.6}
+.hud-corner.tl{top:14px;left:14px;border-width:2px 0 0 2px}
+.hud-corner.tr{top:14px;right:14px;border-width:2px 2px 0 0}
+.hud-corner.bl{bottom:14px;left:14px;border-width:0 0 2px 2px}
+.hud-corner.br{bottom:14px;right:14px;border-width:0 2px 2px 0}
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);animation:scan 4s linear infinite;opacity:.3}
+@keyframes scan{0%{top:0}100%{top:100%}}
+
+/* ── Status panel ── */
+#status-panel{
+  position:fixed;top:18px;left:20px;z-index:7;
+  background:var(--panel);border:1px solid var(--border);border-radius:4px;
+  padding:10px 14px;font-size:11px;line-height:2;backdrop-filter:blur(6px);
+  text-shadow:0 0 8px var(--cyan);min-width:180px;
+}
+.lbl{color:rgba(0,245,255,.45);font-size:9px;text-transform:uppercase;letter-spacing:2px}
+.val{color:var(--cyan)}.val.on{color:var(--green)}.val.warn{color:var(--orange)}
+
+/* ── FPS ── */
+#fps-box{
+  position:fixed;top:18px;right:20px;z-index:7;
+  background:var(--panel);border:1px solid var(--border);border-radius:4px;
+  padding:6px 12px;backdrop-filter:blur(6px);text-align:center;
+}
+#fps-num{font-family:'Orbitron',sans-serif;font-size:26px;font-weight:900;color:var(--green);text-shadow:0 0 14px var(--green);display:block}
+.fps-lbl{font-size:8px;letter-spacing:3px;color:rgba(0,255,136,.45)}
+
+/* ── Gesture badge ── */
+#gesture-display{
+  position:fixed;bottom:36px;left:50%;transform:translateX(-50%);z-index:7;
+  font-family:'Orbitron',sans-serif;font-size:16px;font-weight:700;letter-spacing:4px;
+  padding:9px 26px;border-radius:40px;border:1px solid var(--border);
+  background:var(--panel);backdrop-filter:blur(8px);transition:all .3s;
+  text-shadow:0 0 18px currentColor;pointer-events:none;opacity:0;white-space:nowrap;
+}
+#gesture-display.show{opacity:1}
+#gesture-display.pinch{color:var(--pink);border-color:var(--pink);box-shadow:0 0 28px rgba(255,0,170,.3)}
+#gesture-display.open{color:var(--green);border-color:var(--green);box-shadow:0 0 28px rgba(0,255,136,.3)}
+#gesture-display.beam{color:var(--orange);border-color:var(--orange);box-shadow:0 0 28px rgba(255,102,0,.4)}
+#gesture-display.paint{color:var(--purple);border-color:var(--purple);box-shadow:0 0 28px rgba(170,0,255,.4)}
+
+/* ── Title ── */
+#title-bar{
+  position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:7;
+  font-family:'Orbitron',sans-serif;font-size:12px;font-weight:700;letter-spacing:6px;
+  color:rgba(0,245,255,.55);text-shadow:0 0 12px var(--cyan);white-space:nowrap;
+}
+
+/* ── Mode switcher ── */
+#mode-bar{
+  position:fixed;bottom:36px;right:20px;z-index:8;
+  display:flex;flex-direction:column;gap:8px;
+}
+.mode-btn{
+  font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;
+  padding:7px 12px;border-radius:4px;border:1px solid var(--border);
+  background:var(--panel);color:rgba(0,245,255,.6);cursor:pointer;
+  backdrop-filter:blur(6px);transition:all .2s;white-space:nowrap;
+}
+.mode-btn:hover,.mode-btn.active{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 14px rgba(0,245,255,.3);text-shadow:0 0 8px var(--cyan)}
+.mode-btn.active{background:rgba(0,245,255,.08)}
+
+/* ── Paint toolbar ── */
+#paint-toolbar{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:8;
+  background:var(--panel);border:1px solid var(--border);border-radius:30px;
+  padding:8px 16px;display:flex;align-items:center;gap:12px;
+  backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:opacity .3s;
+}
+#paint-toolbar.visible{opacity:1;pointer-events:auto}
+.color-swatch{
+  width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+  transition:transform .15s,border-color .15s;
+}
+.color-swatch:hover,.color-swatch.sel{transform:scale(1.3);border-color:#fff}
+.paint-tool-btn{
+  font-size:9px;letter-spacing:2px;font-family:'Orbitron',sans-serif;
+  padding:5px 10px;border-radius:20px;border:1px solid var(--border);
+  background:transparent;color:rgba(0,245,255,.7);cursor:pointer;transition:all .2s;
+}
+.paint-tool-btn:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 10px rgba(0,245,255,.25)}
+#brush-size{
+  width:70px;accent-color:var(--cyan);cursor:pointer;
+}
+
+/* ── Watermark ── */
+#watermark{
+  position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:7;
+  font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;letter-spacing:3px;
+  color:rgba(0,245,255,.3);text-shadow:0 0 8px var(--cyan);pointer-events:none;
+}
+
+/* ── Loader ── */
+#loader{
+  position:fixed;inset:0;z-index:100;background:#000008;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  transition:opacity .8s ease;
+}
 #loader.hidden{opacity:0;pointer-events:none}
-#loader-title{font-family:'Orbitron',sans-serif;font-size:clamp(14px,3.5vw,32px);font-weight:900;letter-spacing:7px;color:var(--cyan);text-shadow:0 0 28px var(--cyan),0 0 55px var(--cyan);animation:pulse 1.5s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-#loader-bar-wrap{width:240px;height:3px;background:rgba(0,245,255,.1);border-radius:2px;overflow:hidden}
-#loader-bar{height:100%;background:linear-gradient(90deg,var(--cyan),var(--pink));border-radius:2px;width:0%;transition:width .35s ease;box-shadow:0 0 10px var(--cyan)}
-#loader-status{font-size:10px;letter-spacing:3px;color:rgba(0,245,255,.4);text-align:center;padding:0 20px}
-#loader-skip{margin-top:8px;font-size:9px;letter-spacing:2px;color:rgba(0,245,255,.3);cursor:pointer;border:1px solid rgba(0,245,255,.2);padding:5px 14px;border-radius:20px;background:transparent;font-family:'Share Tech Mono',monospace;transition:all .2s;display:none}
-#loader-skip:hover{color:var(--cyan);border-color:var(--cyan)}
-#loader-skip.show{display:block}
-#cam-err{position:fixed;inset:0;z-index:99;display:none;align-items:center;justify-content:center;background:rgba(0,0,8,.95);flex-direction:column;gap:14px;font-family:'Orbitron',sans-serif;text-align:center;padding:20px}
-#cam-err.show{display:flex}
-#cam-err h2{font-size:18px;color:var(--pink);text-shadow:0 0 20px var(--pink);letter-spacing:4px}
-#cam-err p{font-size:11px;color:rgba(0,245,255,.6);letter-spacing:2px;max-width:340px;line-height:1.8}
-#cam-err button{margin-top:8px;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;padding:10px 22px;border-radius:4px;border:1px solid var(--cyan);background:transparent;color:var(--cyan);cursor:pointer}
+#loader-title{
+  font-family:'Orbitron',sans-serif;font-size:clamp(16px,4vw,34px);font-weight:900;
+  letter-spacing:8px;color:var(--cyan);text-shadow:0 0 30px var(--cyan),0 0 60px var(--cyan);
+  animation:pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+#loader-bar-wrap{width:260px;height:3px;background:rgba(0,245,255,.12);border-radius:2px;overflow:hidden}
+#loader-bar{height:100%;background:linear-gradient(90deg,var(--cyan),var(--pink));border-radius:2px;width:0%;transition:width .4s;box-shadow:0 0 10px var(--cyan)}
+#loader-status{font-size:10px;letter-spacing:3px;color:rgba(0,245,255,.45)}
 </style>
 </head>
 <body>
@@ -76,14 +164,7 @@ html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;font-famil
 <div id="loader">
   <div id="loader-title">AR HAND SYSTEM v3</div>
   <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
-  <div id="loader-status">LOADING...</div>
-  <button id="loader-skip" onclick="skipLoader()">SKIP ▶</button>
-</div>
-
-<div id="cam-err">
-  <h2>⚠ CAMERA ERROR</h2>
-  <p>Camera access denied or not available.<br>Please allow camera permission and reload.</p>
-  <button onclick="location.reload()">↺ RETRY</button>
+  <div id="loader-status">INITIALIZING...</div>
 </div>
 
 <div id="app">
@@ -103,39 +184,43 @@ html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;font-famil
 
   <div id="status-panel">
     <div class="lbl">SYSTEM</div><div class="val on" id="stat-status">● ONLINE</div>
-    <div class="lbl" style="margin-top:4px">HANDS</div><div class="val" id="stat-hands">0</div>
-    <div class="lbl" style="margin-top:4px">GESTURE</div><div class="val" id="stat-gesture">—</div>
-    <div class="lbl" style="margin-top:4px">MODE</div><div class="val" id="stat-mode">AR TRACK</div>
-    <div class="lbl" style="margin-top:4px">PARTICLES</div><div class="val" id="stat-particles">0</div>
+    <div class="lbl" style="margin-top:5px">HANDS</div><div class="val" id="stat-hands">0</div>
+    <div class="lbl" style="margin-top:5px">GESTURE</div><div class="val" id="stat-gesture">—</div>
+    <div class="lbl" style="margin-top:5px">MODE</div><div class="val" id="stat-mode">AR TRACK</div>
+    <div class="lbl" style="margin-top:5px">PARTICLES</div><div class="val" id="stat-particles">0</div>
   </div>
 
   <div id="fps-box">
-    <span class="fps-num" id="fps-num">--</span>
+    <span class="fps-num" id="fps-num">00</span>
     <span class="fps-lbl">FPS</span>
   </div>
 
+  <!-- 3D Holographic Avatar panel -->
   <div id="holo-panel">
     <div id="holo-label">◈ HOLO AVATAR</div>
-    <canvas id="holo-canvas" width="150" height="165"></canvas>
+    <canvas id="holo-canvas" width="160" height="170"></canvas>
   </div>
 
+  <!-- Mode buttons -->
   <div id="mode-bar">
     <button class="mode-btn active" id="btn-ar" onclick="setMode('ar')">⬡ AR TRACK</button>
     <button class="mode-btn" id="btn-paint" onclick="setMode('paint')">✦ PAINT MODE</button>
     <button class="mode-btn" id="btn-both" onclick="setMode('both')">◈ BOTH</button>
   </div>
 
-  <div id="paint-toolbar">
-    <div class="color-swatch sel" style="background:#ff00aa" onclick="setPaintColor('#ff00aa',this)"></div>
-    <div class="color-swatch" style="background:#00f5ff" onclick="setPaintColor('#00f5ff',this)"></div>
-    <div class="color-swatch" style="background:#00ff88" onclick="setPaintColor('#00ff88',this)"></div>
-    <div class="color-swatch" style="background:#ff6600" onclick="setPaintColor('#ff6600',this)"></div>
-    <div class="color-swatch" style="background:#ffff00" onclick="setPaintColor('#ffff00',this)"></div>
-    <div class="color-swatch" style="background:#fff" onclick="setPaintColor('#ffffff',this)"></div>
+  <!-- Paint toolbar -->
+  <div id="paint-toolbar" id="paint-toolbar">
+    <canvas id="color-swatch-ff00aa" class="color-swatch sel" width="22" height="22" style="background:#ff00aa" onclick="setPaintColor('#ff00aa',this)"></canvas>
+    <canvas id="color-swatch-00f5ff" class="color-swatch" width="22" height="22" style="background:#00f5ff" onclick="setPaintColor('#00f5ff',this)"></canvas>
+    <canvas id="color-swatch-00ff88" class="color-swatch" width="22" height="22" style="background:#00ff88" onclick="setPaintColor('#00ff88',this)"></canvas>
+    <canvas id="color-swatch-ff6600" class="color-swatch" width="22" height="22" style="background:#ff6600" onclick="setPaintColor('#ff6600',this)"></canvas>
+    <canvas id="color-swatch-ffff00" class="color-swatch" width="22" height="22" style="background:#ffff00" onclick="setPaintColor('#ffff00',this)"></canvas>
+    <canvas id="color-swatch-ffffff" class="color-swatch" width="22" height="22" style="background:#ffffff" onclick="setPaintColor('#ffffff',this)"></canvas>
+    <span style="color:rgba(0,245,255,.4);font-size:9px">SIZE</span>
     <input type="range" id="brush-size" min="2" max="30" value="8">
-    <button class="paint-tool-btn" onclick="undoPaint()">↩</button>
-    <button class="paint-tool-btn" onclick="clearPaint()">✕</button>
-    <button class="paint-tool-btn" onclick="savePaint()">⬇</button>
+    <button class="paint-tool-btn" onclick="undoPaint()">↩ UNDO</button>
+    <button class="paint-tool-btn" onclick="clearPaint()">✕ CLEAR</button>
+    <button class="paint-tool-btn" onclick="savePaint()">⬇ SAVE</button>
   </div>
 
   <div id="gesture-display">GESTURE</div>
@@ -143,51 +228,36 @@ html,body{width:100%;height:100%;background:var(--bg);overflow:hidden;font-famil
 </div>
 
 <script>
-// ══════════════════════════════════════
-// LOADER CONTROL
-// ══════════════════════════════════════
-let loaderDone = false;
-function skipLoader() {
-  document.getElementById('loader').classList.add('hidden');
-  loaderDone = true;
-}
-function showSkip() {
-  document.getElementById('loader-skip').classList.add('show');
-}
-async function setLoaderStep(pct, msg, delay=350) {
-  document.getElementById('loader-bar').style.width = pct + '%';
-  document.getElementById('loader-status').textContent = msg;
-  await sleep(delay);
-}
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // CONFIG
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 const CFG={
-  PARTICLE_LIFE:50,PARTICLE_COUNT:5,TRAIL_LENGTH:18,
-  RIPPLE_MAX_R:120,GLOW_BLUR:14,LANDMARK_R:5,
+  PARTICLE_LIFE:55,PARTICLE_COUNT:6,TRAIL_LENGTH:20,
+  RIPPLE_MAX_R:130,GLOW_BLUR:16,LANDMARK_R:5,
   CONNECTION_W:2.5,ENERGY_BEAM_W:4,
 };
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // STATE
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 const S={
   hands:[],particles:[],ripples:[],
   trails:Array.from({length:2},()=>Array.from({length:21},()=>[])),
   fps:0,fpsFrames:0,fpsLast:performance.now(),
   hue:0,gestureText:'',gestureClass:'',
-  mode:'ar',
-  paintColor:'#ff00aa',brushSize:8,
-  paintDrawing:false,paintLastX:null,paintLastY:null,
-  paintHistory:[],
+  mode:'ar',           // 'ar' | 'paint' | 'both'
+  paintColor:'#ff00aa',
+  brushSize:8,
+  paintDrawing:false,
+  paintLastX:null,paintLastY:null,
+  paintHistory:[],     // ImageData snapshots for undo
+  prevIndexTip:null,   // for gesture-based painting
+  pinchWasActive:false,
 };
-let gestPaintActive=false,gestPaintLast=null;
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // CANVASES
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 const video       = document.getElementById('video');
 const canvas      = document.getElementById('canvas');
 const ctx         = canvas.getContext('2d');
@@ -197,112 +267,169 @@ const sfCanvas    = document.getElementById('starfield');
 const sfCtx       = sfCanvas.getContext('2d');
 const mxCanvas    = document.getElementById('matrix');
 const mxCtx       = mxCanvas.getContext('2d');
+const holoCanvas  = document.getElementById('holo-canvas');
 
 function resize(){
   [canvas,paintCanvas,sfCanvas,mxCanvas].forEach(c=>{
-    c.width=window.innerWidth;c.height=window.innerHeight;
+    c.width=window.innerWidth; c.height=window.innerHeight;
   });
   buildStars();
 }
 window.addEventListener('resize',resize); resize();
 
-// ══════════════════════════════════════
-// MODE
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// MODE SWITCHING
+// ═══════════════════════════════════════════════════════════
 function setMode(m){
   S.mode=m;
-  ['ar','paint','both'].forEach(id=>document.getElementById('btn-'+id).classList.toggle('active',id===m));
+  ['ar','paint','both'].forEach(id=>{
+    document.getElementById('btn-'+id).classList.toggle('active',id===m);
+  });
   const tb=document.getElementById('paint-toolbar');
-  const sp=m==='paint'||m==='both';
-  tb.classList.toggle('visible',sp);
-  paintCanvas.style.pointerEvents=sp?'auto':'none';
-  document.getElementById('stat-mode').textContent=m==='ar'?'AR TRACK':m==='paint'?'PAINT':'AR+PAINT';
+  const showPaint=(m==='paint'||m==='both');
+  tb.classList.toggle('visible',showPaint);
+  paintCanvas.style.pointerEvents = showPaint ? 'auto' : 'none';
+  document.getElementById('stat-mode').textContent = m==='ar'?'AR TRACK':m==='paint'?'PAINT':'AR + PAINT';
 }
 
-// ══════════════════════════════════════
-// PAINT
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// PAINT TOOLBAR ACTIONS
+// ═══════════════════════════════════════════════════════════
 function setPaintColor(c,el){
   S.paintColor=c;
   document.querySelectorAll('.color-swatch').forEach(e=>e.classList.remove('sel'));
   el.classList.add('sel');
 }
-document.getElementById('brush-size').addEventListener('input',e=>S.brushSize=+e.target.value);
+document.getElementById('brush-size').addEventListener('input',e=>{ S.brushSize=+e.target.value; });
 
-function pushHistory(){ const s=pCtx.getImageData(0,0,paintCanvas.width,paintCanvas.height); S.paintHistory.push(s); if(S.paintHistory.length>25)S.paintHistory.shift(); }
-function undoPaint(){ if(S.paintHistory.length) pCtx.putImageData(S.paintHistory.pop(),0,0); }
-function clearPaint(){ pushHistory(); pCtx.clearRect(0,0,paintCanvas.width,paintCanvas.height); }
-function savePaint(){
-  const tmp=document.createElement('canvas'); tmp.width=paintCanvas.width; tmp.height=paintCanvas.height;
-  const t=tmp.getContext('2d');
-  t.save();t.translate(tmp.width,0);t.scale(-1,1);t.drawImage(video,0,0,tmp.width,tmp.height);t.restore();
-  t.drawImage(paintCanvas,0,0);
-  const a=document.createElement('a'); a.download='ar-painting.png'; a.href=tmp.toDataURL(); a.click();
+function pushPaintHistory(){
+  const snap=pCtx.getImageData(0,0,paintCanvas.width,paintCanvas.height);
+  S.paintHistory.push(snap);
+  if(S.paintHistory.length>30) S.paintHistory.shift();
 }
+function undoPaint(){
+  if(!S.paintHistory.length) return;
+  pCtx.putImageData(S.paintHistory.pop(),0,0);
+}
+function clearPaint(){
+  pushPaintHistory();
+  pCtx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
+}
+function savePaint(){
+  // Merge video frame + paint
+  const tmp=document.createElement('canvas');
+  tmp.width=paintCanvas.width; tmp.height=paintCanvas.height;
+  const t=tmp.getContext('2d');
+  t.save(); t.translate(tmp.width,0); t.scale(-1,1);
+  t.drawImage(video,0,0,tmp.width,tmp.height); t.restore();
+  t.drawImage(paintCanvas,0,0);
+  const a=document.createElement('a');
+  a.download='ar-painting.png'; a.href=tmp.toDataURL('image/png'); a.click();
+}
+
+// Paint by mouse/touch on paintCanvas
+paintCanvas.addEventListener('pointerdown',e=>{
+  if(S.mode==='ar') return;
+  pushPaintHistory();
+  S.paintDrawing=true;
+  S.paintLastX=e.offsetX; S.paintLastY=e.offsetY;
+});
+paintCanvas.addEventListener('pointermove',e=>{
+  if(!S.paintDrawing) return;
+  strokePaint(S.paintLastX,S.paintLastY,e.offsetX,e.offsetY);
+  S.paintLastX=e.offsetX; S.paintLastY=e.offsetY;
+});
+paintCanvas.addEventListener('pointerup',()=>{ S.paintDrawing=false; S.paintLastX=null; });
+paintCanvas.addEventListener('pointerleave',()=>{ S.paintDrawing=false; S.paintLastX=null; });
+
 function strokePaint(x1,y1,x2,y2){
   pCtx.save();
-  pCtx.strokeStyle=S.paintColor; pCtx.lineWidth=S.brushSize;
-  pCtx.lineCap='round'; pCtx.lineJoin='round';
-  pCtx.shadowColor=S.paintColor; pCtx.shadowBlur=S.brushSize*1.4;
-  pCtx.beginPath(); pCtx.moveTo(x1,y1); pCtx.lineTo(x2,y2); pCtx.stroke();
+  pCtx.globalCompositeOperation='source-over';
+  pCtx.strokeStyle=S.paintColor;
+  pCtx.lineWidth=S.brushSize;
+  pCtx.lineCap='round';
+  pCtx.lineJoin='round';
+  pCtx.shadowColor=S.paintColor;
+  pCtx.shadowBlur=S.brushSize*1.5;
+  pCtx.beginPath();
+  pCtx.moveTo(x1,y1); pCtx.lineTo(x2,y2);
+  pCtx.stroke();
   pCtx.restore();
 }
-paintCanvas.addEventListener('pointerdown',e=>{ if(S.mode==='ar')return; pushHistory(); S.paintDrawing=true; S.paintLastX=e.offsetX; S.paintLastY=e.offsetY; });
-paintCanvas.addEventListener('pointermove',e=>{ if(!S.paintDrawing)return; strokePaint(S.paintLastX,S.paintLastY,e.offsetX,e.offsetY); S.paintLastX=e.offsetX; S.paintLastY=e.offsetY; });
-['pointerup','pointerleave'].forEach(ev=>paintCanvas.addEventListener(ev,()=>{ S.paintDrawing=false; S.paintLastX=null; }));
 
+// Gesture-based painting (index tip draws when open-hand mode)
+let gestPaintActive=false;
+let gestPaintLast=null;
 function handleGesturePaint(hands){
-  if(S.mode==='ar'||!hands.length){ gestPaintActive=false; gestPaintLast=null; return; }
+  if(S.mode==='ar') return;
+  if(!hands.length){ gestPaintActive=false; gestPaintLast=null; return; }
   const lms=hands[0].landmarks;
-  const tip=lts(lms[8]);
-  const indexUp=lms[8].y<lms[6].y;
-  const midDown=lms[12].y>lms[10].y;
-  if(indexUp&&midDown){
-    if(gestPaintLast){ if(!gestPaintActive)pushHistory(); strokePaint(gestPaintLast.x,gestPaintLast.y,tip.x,tip.y); }
-    gestPaintActive=true; gestPaintLast={x:tip.x,y:tip.y};
-  } else { gestPaintActive=false; gestPaintLast=null; }
+  const tip=landmarkToScreen(lms[8]);
+  const mid=landmarkToScreen(lms[6]);
+  // Index extended = fingertip Y above MCP
+  const indexExtended = lms[8].y < lms[6].y;
+  // Thumb up = not painting mode activator (only index draws alone)
+  const middleDown = lms[12].y > lms[10].y;
+
+  if(indexExtended && middleDown){
+    // draw!
+    if(gestPaintLast){
+      if(!gestPaintActive) pushPaintHistory();
+      strokePaint(gestPaintLast.x,gestPaintLast.y,tip.x,tip.y);
+    }
+    gestPaintActive=true;
+    gestPaintLast={x:tip.x,y:tip.y};
+  } else {
+    gestPaintActive=false;
+    gestPaintLast=null;
+  }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // STARFIELD
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 let stars=[];
 function buildStars(){
-  stars=Array.from({length:180},()=>({x:Math.random()*sfCanvas.width,y:Math.random()*sfCanvas.height,r:Math.random()*1.3+.2,speed:Math.random()*.28+.04,alpha:Math.random()*.65+.2}));
+  stars=Array.from({length:200},()=>({
+    x:Math.random()*sfCanvas.width,y:Math.random()*sfCanvas.height,
+    r:Math.random()*1.4+.2,speed:Math.random()*.3+.04,alpha:Math.random()*.7+.2
+  }));
 }
 function drawStars(){
   sfCtx.clearRect(0,0,sfCanvas.width,sfCanvas.height);
   for(const s of stars){
-    sfCtx.beginPath();sfCtx.arc(s.x,s.y,s.r,0,Math.PI*2);
-    sfCtx.fillStyle=`rgba(180,220,255,${s.alpha})`;sfCtx.fill();
+    sfCtx.beginPath(); sfCtx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    sfCtx.fillStyle=`rgba(180,220,255,${s.alpha})`; sfCtx.fill();
     s.y+=s.speed; if(s.y>sfCanvas.height){s.y=0;s.x=Math.random()*sfCanvas.width;}
   }
 }
 
-// ══════════════════════════════════════
-// MATRIX
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// MATRIX RAIN
+// ═══════════════════════════════════════════════════════════
 const COLS=Math.floor(window.innerWidth/16);
 const drops=Array.from({length:COLS},()=>Math.random()*50-50);
-const CHARS='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789∑∆∫≠≡∞ﾊﾐｰｳｼﾏﾑﾎﾂｹﾒｴｶ';
+const CHARS='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ﾊﾐﾋｰｳｼﾏﾑﾎﾂｹﾒｴｶｷﾑﾕﾗｾﾈｪｩｧ∑∆∫≠≡∞';
 function drawMatrix(){
-  mxCtx.fillStyle='rgba(0,0,8,0.05)';mxCtx.fillRect(0,0,mxCanvas.width,mxCanvas.height);
-  mxCtx.font='13px Share Tech Mono';
+  mxCtx.fillStyle='rgba(0,0,8,0.05)';
+  mxCtx.fillRect(0,0,mxCanvas.width,mxCanvas.height);
+  mxCtx.font='14px Share Tech Mono';
   for(let i=0;i<drops.length;i++){
-    mxCtx.fillStyle=`rgba(0,${Math.random()>.9?255:150},60,0.85)`;
-    mxCtx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*16,drops[i]*16);
-    if(drops[i]*16>mxCanvas.height&&Math.random()>.975)drops[i]=0;
+    const ch=CHARS[Math.floor(Math.random()*CHARS.length)];
+    mxCtx.fillStyle=`rgba(0,${Math.random()>.9?255:160},${Math.random()>.9?255:60},0.9)`;
+    mxCtx.fillText(ch,i*16,drops[i]*16);
+    if(drops[i]*16>mxCanvas.height&&Math.random()>.975) drops[i]=0;
     drops[i]++;
   }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // AUDIO
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 let audioCtx;
-function initAudio(){try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
-function playTone(freq,type,dur,vol){
-  if(!audioCtx)return;
+function initAudio(){ audioCtx=new(window.AudioContext||window.webkitAudioContext)(); }
+function playTone(freq=440,type='sine',dur=.12,vol=.07){
+  if(!audioCtx) return;
   try{
     const o=audioCtx.createOscillator(),g=audioCtx.createGain();
     o.connect(g);g.connect(audioCtx.destination);
@@ -312,304 +439,473 @@ function playTone(freq,type,dur,vol){
     o.start();o.stop(audioCtx.currentTime+dur);
   }catch(e){}
 }
-function playPinch(){playTone(880,'sine',.2,.09);playTone(440,'triangle',.12,.04);}
-function playBeam(){playTone(220,'sawtooth',.07,.04);}
+function playPinch(){ playTone(880,'sine',.22,.1); playTone(440,'triangle',.14,.05); }
+function playBeam(){ playTone(220,'sawtooth',.07,.04); }
+function playPaintStroke(){ playTone(600+Math.random()*200,'sine',.06,.03); }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // CONNECTIONS
-// ══════════════════════════════════════
-const CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17],[0,5]];
+// ═══════════════════════════════════════════════════════════
+const CONNECTIONS=[
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17],[0,5]
+];
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // HELPERS
-// ══════════════════════════════════════
-function lts(lm){return{x:(1-lm.x)*canvas.width,y:lm.y*canvas.height};}
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
-function nc(h,a=1){return`hsla(${h},100%,60%,${a})`;}
+// ═══════════════════════════════════════════════════════════
+function landmarkToScreen(lm){ return{x:(1-lm.x)*canvas.width,y:lm.y*canvas.height}; }
+function dist2D(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+function neonColor(h,a=1){ return`hsla(${h},100%,60%,${a})`; }
 
-// ══════════════════════════════════════
-// GESTURES
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// GESTURE DETECTION
+// ═══════════════════════════════════════════════════════════
 function detectGestures(){
-  S.gestureText='';S.gestureClass='';
-  const g=[];
+  S.gestureText=''; S.gestureClass='';
+  const gestures=[];
+
   for(let h=0;h<S.hands.length;h++){
     const lms=S.hands[h].landmarks;
-    const th=lts(lms[4]),ix=lts(lms[8]);
-    const pd=dist(th,ix),hw=dist(lts(lms[0]),lts(lms[9]))||1;
-    const isPinch=pd/hw<.45;
-    let oc=0;
-    for(let i=0;i<4;i++) if(lms[[8,12,16,20][i]].y<lms[[6,10,14,18][i]].y)oc++;
-    const isOpen=oc>=3;
+    const thumb=landmarkToScreen(lms[4]);
+    const index=landmarkToScreen(lms[8]);
+    const pinchDist=dist2D(thumb,index);
+    const handW=dist2D(landmarkToScreen(lms[0]),landmarkToScreen(lms[9]))||1;
+    const isPinch=pinchDist/handW<.45;
+    const tips=[8,12,16,20],mcps=[6,10,14,18];
+    let openCnt=0;
+    for(let i=0;i<4;i++) if(lms[tips[i]].y<lms[mcps[i]].y) openCnt++;
+    const isOpen=openCnt>=3;
     if(isPinch){
-      g.push('PINCH');
-      if(Math.random()<.28){S.ripples.push({x:(th.x+ix.x)/2,y:(th.y+ix.y)/2,r:0,life:1});playPinch();}
-    } else if(isOpen) g.push('OPEN HAND');
+      gestures.push('PINCH');
+      if(Math.random()<.3){
+        S.ripples.push({x:(thumb.x+index.x)/2,y:(thumb.y+index.y)/2,r:0,life:1});
+        playPinch();
+      }
+    } else if(isOpen) gestures.push('OPEN HAND');
   }
-  if((S.mode==='paint'||S.mode==='both')&&gestPaintActive)g.push('✦ DRAWING');
+
+  // Gesture painting indicator
+  if((S.mode==='paint'||S.mode==='both')&&gestPaintActive) gestures.push('✦ DRAWING');
+
   if(S.hands.length===2){
-    const i1=lts(S.hands[0].landmarks[8]),i2=lts(S.hands[1].landmarks[8]);
-    if(dist(i1,i2)<canvas.width*.5){g.push('⚡ ENERGY BEAM');playBeam();}
+    const i1=landmarkToScreen(S.hands[0].landmarks[8]);
+    const i2=landmarkToScreen(S.hands[1].landmarks[8]);
+    if(dist2D(i1,i2)<canvas.width*.5){ gestures.push('⚡ ENERGY BEAM'); playBeam(); }
   }
-  if(g.length){
-    S.gestureText=g.join(' · ');
-    S.gestureClass=g[0]==='PINCH'?'pinch':g[0]==='OPEN HAND'?'open':g[0]==='✦ DRAWING'?'paint':'beam';
+
+  if(gestures.length){
+    S.gestureText=gestures.join(' · ');
+    S.gestureClass=gestures[0]==='PINCH'?'pinch':gestures[0]==='OPEN HAND'?'open':gestures[0]==='✦ DRAWING'?'paint':'beam';
   }
   const el=document.getElementById('gesture-display');
-  if(S.gestureText){el.textContent=S.gestureText;el.className='show '+S.gestureClass;}else el.className='';
+  if(S.gestureText){ el.textContent=S.gestureText; el.className='show '+S.gestureClass; }
+  else el.className='';
   document.getElementById('stat-gesture').textContent=S.gestureText||'—';
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // PARTICLES
-// ══════════════════════════════════════
-function spawnP(x,y,hue){
+// ═══════════════════════════════════════════════════════════
+function spawnParticles(x,y,hue){
   for(let i=0;i<CFG.PARTICLE_COUNT;i++){
-    const a=Math.random()*Math.PI*2,sp=Math.random()*2.8+.8;
-    S.particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-.8,life:CFG.PARTICLE_LIFE,maxLife:CFG.PARTICLE_LIFE,hue,r:Math.random()*2.5+.8});
+    const a=Math.random()*Math.PI*2,sp=Math.random()*3+1;
+    S.particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,
+      life:CFG.PARTICLE_LIFE,maxLife:CFG.PARTICLE_LIFE,hue,r:Math.random()*3+1});
   }
 }
-function updateP(){for(let i=S.particles.length-1;i>=0;i--){const p=S.particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.07;p.life--;if(p.life<=0)S.particles.splice(i,1);}}
-function drawP(){
+function updateParticles(){
+  for(let i=S.particles.length-1;i>=0;i--){
+    const p=S.particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.life--;
+    if(p.life<=0) S.particles.splice(i,1);
+  }
+}
+function drawParticles(){
   for(const p of S.particles){
     const al=p.life/p.maxLife;
-    ctx.save();ctx.globalAlpha=al*.8;ctx.shadowColor=nc(p.hue);ctx.shadowBlur=8;ctx.fillStyle=nc(p.hue);
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r*al,0,Math.PI*2);ctx.fill();ctx.restore();
+    ctx.save();ctx.globalAlpha=al*.85;
+    ctx.shadowColor=neonColor(p.hue);ctx.shadowBlur=10;
+    ctx.fillStyle=neonColor(p.hue);
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*al,0,Math.PI*2);ctx.fill();
+    ctx.restore();
   }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // TRAILS
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 function updateTrails(){
   for(let h=0;h<S.hands.length;h++){
     const lms=S.hands[h].landmarks;
     for(const t of[4,8,12,16,20]){
-      const sc=lts(lms[t]);
-      if(!S.trails[h])S.trails[h]=Array.from({length:21},()=>[]);
+      const sc=landmarkToScreen(lms[t]);
+      if(!S.trails[h]) S.trails[h]=Array.from({length:21},()=>[]);
       S.trails[h][t].push({x:sc.x,y:sc.y});
-      if(S.trails[h][t].length>CFG.TRAIL_LENGTH)S.trails[h][t].shift();
-      if(Math.random()<.35)spawnP(sc.x,sc.y,(S.hue+t*18)%360);
+      if(S.trails[h][t].length>CFG.TRAIL_LENGTH) S.trails[h][t].shift();
+      if(Math.random()<.4) spawnParticles(sc.x,sc.y,(S.hue+t*18)%360);
     }
   }
 }
 function drawTrails(){
   for(let h=0;h<2;h++){
-    if(!S.trails[h])continue;
+    if(!S.trails[h]) continue;
     for(const t of[4,8,12,16,20]){
-      const trail=S.trails[h][t];if(trail.length<2)continue;
+      const trail=S.trails[h][t];
+      if(trail.length<2) continue;
       ctx.save();
       for(let i=1;i<trail.length;i++){
         const al=i/trail.length,hue=(S.hue+t*18+i*4)%360;
         ctx.beginPath();ctx.moveTo(trail[i-1].x,trail[i-1].y);ctx.lineTo(trail[i].x,trail[i].y);
-        ctx.strokeStyle=nc(hue,al);ctx.lineWidth=al*3;ctx.shadowColor=nc(hue);ctx.shadowBlur=10*al;ctx.lineCap='round';ctx.stroke();
+        ctx.strokeStyle=neonColor(hue,al);ctx.lineWidth=al*3;
+        ctx.shadowColor=neonColor(hue);ctx.shadowBlur=12*al;ctx.lineCap='round';ctx.stroke();
       }
       ctx.restore();
     }
   }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // RIPPLES
-// ══════════════════════════════════════
-function updateR(){for(let i=S.ripples.length-1;i>=0;i--){const r=S.ripples[i];r.r+=4;r.life-=.025;if(r.life<=0||r.r>CFG.RIPPLE_MAX_R)S.ripples.splice(i,1);}}
-function drawR(){
+// ═══════════════════════════════════════════════════════════
+function updateRipples(){
+  for(let i=S.ripples.length-1;i>=0;i--){
+    const r=S.ripples[i]; r.r+=4; r.life-=.025;
+    if(r.life<=0||r.r>CFG.RIPPLE_MAX_R) S.ripples.splice(i,1);
+  }
+}
+function drawRipples(){
   for(const rp of S.ripples){
-    ctx.save();ctx.globalAlpha=rp.life*.75;ctx.strokeStyle=nc(S.hue+120,rp.life);ctx.lineWidth=2;ctx.shadowColor=nc(S.hue+120);ctx.shadowBlur=18;
+    ctx.save();
+    ctx.globalAlpha=rp.life*.8;ctx.strokeStyle=neonColor(S.hue+120,rp.life);
+    ctx.lineWidth=2;ctx.shadowColor=neonColor(S.hue+120);ctx.shadowBlur=20;
     ctx.beginPath();ctx.arc(rp.x,rp.y,rp.r,0,Math.PI*2);ctx.stroke();
-    ctx.globalAlpha=rp.life*.3;ctx.lineWidth=1;ctx.beginPath();ctx.arc(rp.x,rp.y,rp.r*1.5,0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=rp.life*.35;ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(rp.x,rp.y,rp.r*1.6,0,Math.PI*2);ctx.stroke();
     ctx.restore();
   }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // SKELETON
-// ══════════════════════════════════════
-function drawSkel(lms,hIdx){
-  const hb=S.hue+hIdx*180;
+// ═══════════════════════════════════════════════════════════
+function drawSkeleton(lms,hIdx){
+  const hueBase=S.hue+hIdx*180;
   for(const[a,b]of CONNECTIONS){
-    const pa=lts(lms[a]),pb=lts(lms[b]),hue=(hb+a*5)%360;
-    ctx.save();ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);
-    ctx.strokeStyle=nc(hue,.85);ctx.lineWidth=CFG.CONNECTION_W;ctx.lineCap='round';
-    ctx.shadowColor=nc(hue);ctx.shadowBlur=CFG.GLOW_BLUR;ctx.stroke();ctx.restore();
+    const pa=landmarkToScreen(lms[a]),pb=landmarkToScreen(lms[b]);
+    const hue=(hueBase+a*5)%360;
+    ctx.save();
+    ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);
+    ctx.strokeStyle=neonColor(hue,.85);ctx.lineWidth=CFG.CONNECTION_W;
+    ctx.lineCap='round';ctx.shadowColor=neonColor(hue);ctx.shadowBlur=CFG.GLOW_BLUR;
+    ctx.stroke();ctx.restore();
   }
   for(let i=0;i<lms.length;i++){
-    const pt=lts(lms[i]),hue=(hb+i*10)%360;
+    const pt=landmarkToScreen(lms[i]),hue=(hueBase+i*10)%360;
     const isTip=[4,8,12,16,20].includes(i),r=isTip?CFG.LANDMARK_R+2:CFG.LANDMARK_R;
     ctx.save();
-    ctx.beginPath();ctx.arc(pt.x,pt.y,r+4,0,Math.PI*2);ctx.strokeStyle=nc(hue,.28);ctx.lineWidth=2;ctx.shadowColor=nc(hue);ctx.shadowBlur=18;ctx.stroke();
-    ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,Math.PI*2);ctx.fillStyle=nc(hue);ctx.shadowBlur=22;ctx.fill();
+    ctx.beginPath();ctx.arc(pt.x,pt.y,r+4,0,Math.PI*2);
+    ctx.strokeStyle=neonColor(hue,.3);ctx.lineWidth=2;
+    ctx.shadowColor=neonColor(hue);ctx.shadowBlur=20;ctx.stroke();
+    ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,Math.PI*2);
+    ctx.fillStyle=neonColor(hue);ctx.shadowBlur=25;ctx.fill();
     ctx.restore();
   }
 }
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // ENERGY BEAM
-// ══════════════════════════════════════
-function drawBeam(){
-  if(S.hands.length<2)return;
-  const p1=lts(S.hands[0].landmarks[8]),p2=lts(S.hands[1].landmarks[8]);
-  if(dist(p1,p2)>canvas.width*.5)return;
+// ═══════════════════════════════════════════════════════════
+function drawEnergyBeam(){
+  if(S.hands.length<2) return;
+  const p1=landmarkToScreen(S.hands[0].landmarks[8]);
+  const p2=landmarkToScreen(S.hands[1].landmarks[8]);
+  if(dist2D(p1,p2)>canvas.width*.5) return;
   const t=performance.now()/400;
   ctx.save();
   for(let layer=3;layer>=0;layer--){
-    const hue=(S.hue+layer*30)%360,w=(CFG.ENERGY_BEAM_W+layer*3)*(.8+.2*Math.sin(t));
-    const mx=(p1.x+p2.x)/2+Math.sin(t*2.3+layer)*20,my=(p1.y+p2.y)/2+Math.cos(t*1.7+layer)*20;
+    const hue=(S.hue+layer*30)%360;
+    const w=(CFG.ENERGY_BEAM_W+layer*3)*(.8+.2*Math.sin(t));
+    const mx=(p1.x+p2.x)/2+Math.sin(t*2.3+layer)*22;
+    const my=(p1.y+p2.y)/2+Math.cos(t*1.7+layer)*22;
     ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.quadraticCurveTo(mx,my,p2.x,p2.y);
-    ctx.strokeStyle=nc(hue,.6-layer*.1);ctx.lineWidth=w;ctx.lineCap='round';
-    ctx.shadowColor=nc(hue);ctx.shadowBlur=28;ctx.globalCompositeOperation='lighter';ctx.stroke();
+    ctx.strokeStyle=neonColor(hue,.6-layer*.1);ctx.lineWidth=w;ctx.lineCap='round';
+    ctx.shadowColor=neonColor(hue);ctx.shadowBlur=30;
+    ctx.globalCompositeOperation='lighter';ctx.stroke();
   }
-  if(Math.random()<.55)spawnP(p1.x+(p2.x-p1.x)*Math.random(),p1.y+(p2.y-p1.y)*Math.random(),(S.hue+60)%360);
+  if(Math.random()<.6){
+    const bx=p1.x+(p2.x-p1.x)*Math.random(),by=p1.y+(p2.y-p1.y)*Math.random();
+    spawnParticles(bx,by,(S.hue+60)%360);
+  }
   ctx.restore();
 }
 
-// ══════════════════════════════════════
-// PAINT CURSOR
-// ══════════════════════════════════════
-function drawPaintCursor(){
-  if(S.mode==='ar'||!S.hands.length)return;
-  const lms=S.hands[0].landmarks;
-  const tip=lts(lms[8]);
-  const drawing=lms[8].y<lms[6].y&&lms[12].y>lms[10].y;
-  ctx.save();
-  ctx.beginPath();ctx.arc(tip.x,tip.y,drawing?S.brushSize/2+5:9,0,Math.PI*2);
-  ctx.strokeStyle=drawing?S.paintColor:'rgba(255,255,255,0.45)';ctx.lineWidth=2;
-  ctx.shadowColor=S.paintColor;ctx.shadowBlur=drawing?18:6;ctx.stroke();
-  if(drawing){ctx.beginPath();ctx.arc(tip.x,tip.y,3,0,Math.PI*2);ctx.fillStyle=S.paintColor;ctx.fill();}
-  ctx.restore();
-}
+// ═══════════════════════════════════════════════════════════
+// 3D HOLOGRAPHIC AVATAR (WebGL wireframe hand)
+// ═══════════════════════════════════════════════════════════
+(function initHolo(){
+  const gl=holoCanvas.getContext('webgl',{alpha:true,antialias:true});
+  if(!gl){ document.getElementById('holo-panel').style.display='none'; return; }
+  gl.clearColor(0,0,0,0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
 
-// ══════════════════════════════════════
-// HOLOGRAPHIC WEBGL AVATAR
-// ══════════════════════════════════════
-function initHolo(){
-  const hc=document.getElementById('holo-canvas');
-  const gl=hc.getContext('webgl',{alpha:true,antialias:true,preserveDrawingBuffer:false});
-  if(!gl){document.getElementById('holo-panel').style.display='none';return;}
-  gl.clearColor(0,0,0,0);gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
-  const vs=`attribute vec3 aP;uniform mat4 uM;uniform float uT;varying float vY;void main(){vec3 p=aP;p.y+=sin(uT*2.0+aP.x*3.0)*0.012;gl_Position=uM*vec4(p,1.0);gl_PointSize=5.0;vY=p.y;}`;
-  const fs=`precision mediump float;uniform float uT;varying float vY;void main(){float h=fract(uT*.15+vY*.4);float r=abs(h*6.-3.)-1.;float g=2.-abs(h*6.-2.);float b=2.-abs(h*6.-4.);gl_FragColor=vec4(clamp(vec3(r,g,b),0.,1.),.78);}`;
-  function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);return s;}
+  const vsrc=`
+    attribute vec3 aPos;
+    uniform mat4 uMVP;
+    uniform float uTime;
+    varying float vY;
+    void main(){
+      vec3 p=aPos;
+      // subtle floating oscillation
+      p.y += sin(uTime*2.0+aPos.x*3.0)*0.01;
+      gl_Position=uMVP*vec4(p,1.0);
+      gl_PointSize=5.0;
+      vY=aPos.y;
+    }`;
+  const fsrc=`
+    precision mediump float;
+    uniform float uTime;
+    varying float vY;
+    void main(){
+      float hue=mod(uTime*0.2+vY*0.5,1.0);
+      // hue to rgb
+      float r=abs(hue*6.0-3.0)-1.0;
+      float g=2.0-abs(hue*6.0-2.0);
+      float b=2.0-abs(hue*6.0-4.0);
+      vec3 col=clamp(vec3(r,g,b),0.0,1.0);
+      gl_FragColor=vec4(col,0.75);
+    }`;
+
+  function compileShader(type,src){
+    const sh=gl.createShader(type);
+    gl.shaderSource(sh,src); gl.compileShader(sh);
+    return sh;
+  }
   const prog=gl.createProgram();
-  gl.attachShader(prog,sh(gl.VERTEX_SHADER,vs));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,fs));
-  gl.linkProgram(prog);gl.useProgram(prog);
-  const aP=gl.getAttribLocation(prog,'aP'),uM=gl.getUniformLocation(prog,'uM'),uT=gl.getUniformLocation(prog,'uT');
+  gl.attachShader(prog,compileShader(gl.VERTEX_SHADER,vsrc));
+  gl.attachShader(prog,compileShader(gl.FRAGMENT_SHADER,fsrc));
+  gl.linkProgram(prog); gl.useProgram(prog);
 
-  const BJ=[[0,0,0],[-.15,.16,.02],[-.15,.33,.03],[-.15,.46,.02],[-.15,.57,.01],[-.05,.18,0],[-.05,.38,0],[-.05,.52,0],[-.05,.62,0],[.04,.19,0],[.04,.4,0],[.04,.54,0],[.04,.64,0],[.13,.18,0],[.13,.37,0],[.13,.5,0],[.13,.6,0],[.22,.15,.02],[.22,.3,.02],[.22,.42,.02],[.22,.52,.02]];
+  const aPos=gl.getAttribLocation(prog,'aPos');
+  const uMVP=gl.getUniformLocation(prog,'uMVP');
+  const uTime=gl.getUniformLocation(prog,'uTime');
+
+  // Base hand geometry: 21 joints in normalized coords
+  // We define a canonical hand skeleton in 3D
+  const BASE_JOINTS=[
+    [0,0,0],    // 0 wrist
+    [-.15,.15,.02],[-.15,.32,.03],[-.15,.46,.02],[-.15,.58,.01], // thumb
+    [-.05,.18,0],[-.05,.38,0],[-.05,.52,0],[-.05,.62,0], // index
+    [.04,.19,0],[.04,.4,0],[.04,.54,0],[.04,.64,0], // middle
+    [.13,.18,0],[.13,.37,0],[.13,.5,0],[.13,.6,0], // ring
+    [.22,.15,.02],[.22,.3,.02],[.22,.42,.02],[.22,.52,.02], // pinky
+  ];
+
+  // Build vertex buffer from connections
   const verts=[];
-  for(const[a,b]of CONNECTIONS){const ja=BJ[a],jb=BJ[b];for(let t=0;t<=8;t++){const f=t/8;verts.push(ja[0]+(jb[0]-ja[0])*f,ja[1]+(jb[1]-ja[1])*f,ja[2]+(jb[2]-ja[2])*f);}}
-  for(const j of BJ)verts.push(...j);
-  const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.DYNAMIC_DRAW);
-  const lineIdx=[];let vi=0;for(const _ of CONNECTIONS){for(let t=0;t<8;t++)lineIdx.push(vi+t,vi+t+1);vi+=9;}
-  const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(lineIdx),gl.STATIC_DRAW);
+  for(const[a,b]of CONNECTIONS){
+    const ja=BASE_JOINTS[a],jb=BASE_JOINTS[b];
+    // interpolate 8 points per bone for smooth line
+    for(let t=0;t<=8;t++){
+      const f=t/8;
+      verts.push(ja[0]+(jb[0]-ja[0])*f, ja[1]+(jb[1]-ja[1])*f, ja[2]+(jb[2]-ja[2])*f);
+    }
+  }
+  // also dots at joints
+  for(const j of BASE_JOINTS) verts.push(...j);
 
-  function m4mul(a,b){const o=new Float32Array(16);for(let r=0;r<4;r++)for(let c=0;c<4;c++){let s=0;for(let k=0;k<4;k++)s+=a[r*4+k]*b[k*4+c];o[r*4+c]=s;}return o;}
-  function persp(fov,ar,n,f){const t=Math.tan(fov/2),m=new Float32Array(16);m[0]=1/(ar*t);m[5]=1/t;m[10]=-(f+n)/(f-n);m[11]=-1;m[14]=-2*f*n/(f-n);return m;}
-  function ry(a){const c=Math.cos(a),s=Math.sin(a),m=new Float32Array(16);m[0]=c;m[2]=s;m[5]=1;m[8]=-s;m[10]=c;m[15]=1;return m;}
-  function rx(a){const c=Math.cos(a),s=Math.sin(a),m=new Float32Array(16);m[0]=1;m[5]=c;m[6]=-s;m[9]=s;m[10]=c;m[15]=1;return m;}
-  function tr(x,y,z){const m=new Float32Array(16);m[0]=m[5]=m[10]=m[15]=1;m[12]=x;m[13]=y;m[14]=z;return m;}
-  const proj=persp(1.1,150/165,.1,10);
-  const jointCount=BJ.length;
-  const boneVertCount=CONNECTIONS.length*9;
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+
+  // Build line index buffer (segments per bone)
+  const lineIdx=[];
+  let vi=0;
+  for(const _ of CONNECTIONS){
+    for(let t=0;t<8;t++){ lineIdx.push(vi+t,vi+t+1); }
+    vi+=9;
+  }
+  const ib=gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(lineIdx),gl.STATIC_DRAW);
+
+  // Simple mat4 helpers
+  function mat4Mul(a,b){
+    const o=new Float32Array(16);
+    for(let r=0;r<4;r++) for(let c=0;c<4;c++){
+      let s=0; for(let k=0;k<4;k++) s+=a[r*4+k]*b[k*4+c];
+      o[r*4+c]=s;
+    } return o;
+  }
+  function perspective(fov,ar,n,f){
+    const t=Math.tan(fov/2),m=new Float32Array(16);
+    m[0]=1/(ar*t);m[5]=1/t;m[10]=-(f+n)/(f-n);m[11]=-1;m[14]=-2*f*n/(f-n);
+    return m;
+  }
+  function rotY(a){
+    const c=Math.cos(a),s=Math.sin(a),m=new Float32Array(16);
+    m[0]=c;m[2]=s;m[5]=1;m[8]=-s;m[10]=c;m[15]=1;
+    return m;
+  }
+  function rotX(a){
+    const c=Math.cos(a),s=Math.sin(a),m=new Float32Array(16);
+    m[0]=1;m[5]=c;m[6]=-s;m[9]=s;m[10]=c;m[15]=1;
+    return m;
+  }
+  function trans(x,y,z){
+    const m=new Float32Array(16);
+    m[0]=m[5]=m[10]=m[15]=1;m[12]=x;m[13]=y;m[14]=z;
+    return m;
+  }
+
+  const proj=perspective(1.1,160/170,0.1,10);
 
   function renderHolo(t){
-    requestAnimationFrame(renderHolo);
-    gl.viewport(0,0,150,165);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.viewport(0,0,160,170);
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+    // Use live hand landmarks if available, else spin the default skeleton
     let mvp;
     if(S.hands.length>0){
+      // Map real landmarks onto the holo (squish to -0.5..0.5 range)
       const lms=S.hands[0].landmarks;
+      // Rebuild verts from live data
       const lv=[];
-      for(const[a,b]of CONNECTIONS){const ja=lms[a],jb=lms[b];for(let k=0;k<=8;k++){const f=k/8;lv.push((ja.x+(jb.x-ja.x)*f-.5)*1.2,-((ja.y+(jb.y-ja.y)*f-.5)*1.2),-((ja.z+(jb.z-ja.z)*f)*2));}}
-      for(const lm of lms)lv.push((lm.x-.5)*1.2,-((lm.y-.5)*1.2),-(lm.z*2));
+      for(const[a,b]of CONNECTIONS){
+        const ja=lms[a],jb=lms[b];
+        for(let k=0;k<=8;k++){
+          const f=k/8;
+          lv.push(
+            ((ja.x+(jb.x-ja.x)*f)-.5)*1.2,
+            -((ja.y+(jb.y-ja.y)*f)-.5)*1.2,
+            -((ja.z+(jb.z-ja.z)*f))*2
+          );
+        }
+      }
+      for(const lm of lms) lv.push((lm.x-.5)*1.2,-((lm.y-.5)*1.2),-(lm.z*2));
       gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(lv),gl.DYNAMIC_DRAW);
-      mvp=m4mul(proj,tr(0,0,-1.5));
+
+      const view=trans(0,0,-1.5);
+      mvp=mat4Mul(proj,view);
     } else {
-      const ang=t*.55,tilt=Math.sin(t*.28)*.28;
-      mvp=m4mul(proj,m4mul(tr(0,-.14,-1.8),m4mul(ry(ang),rx(-.3+tilt))));
+      // Spin the canonical skeleton
+      const angle=t*.6;
+      const tilt=Math.sin(t*.3)*.3;
+      const model=mat4Mul(rotY(angle),rotX(-.3+tilt));
+      const view=trans(0,-.15,-1.8);
+      mvp=mat4Mul(proj,mat4Mul(view,model));
     }
-    gl.uniformMatrix4fv(uM,false,mvp);gl.uniform1f(uT,t);
-    gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.enableVertexAttribArray(aP);gl.vertexAttribPointer(aP,3,gl.FLOAT,false,0,0);
+
+    gl.uniformMatrix4fv(uMVP,false,mvp);
+    gl.uniform1f(uTime,t);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
-    gl.lineWidth(1.5);gl.drawElements(gl.LINES,lineIdx.length,gl.UNSIGNED_SHORT,0);
-    gl.drawArrays(gl.POINTS,boneVertCount,jointCount);
+
+    // Draw wireframe
+    gl.lineWidth(1.5);
+    gl.drawElements(gl.LINES,lineIdx.length,gl.UNSIGNED_SHORT,0);
+
+    // Draw joints as points
+    const jointOffset=(verts.length/3-BASE_JOINTS.length)*4; // bytes
+    gl.drawArrays(gl.POINTS,verts.length/3-BASE_JOINTS.length,BASE_JOINTS.length);
+
+    requestAnimationFrame(renderHolo);
   }
   requestAnimationFrame(renderHolo);
-}
+})();
 
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // FPS
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 function updateFPS(now){
   S.fpsFrames++;
   if(now-S.fpsLast>=1000){
-    S.fps=S.fpsFrames;S.fpsFrames=0;S.fpsLast=now;
+    S.fps=S.fpsFrames; S.fpsFrames=0; S.fpsLast=now;
     const el=document.getElementById('fps-num');
     el.textContent=String(S.fps).padStart(2,'0');
     const col=S.fps>=50?'var(--green)':S.fps>=30?'var(--orange)':'#ff4444';
-    el.style.color=col;el.style.textShadow=`0 0 12px ${col}`;
+    el.style.color=col; el.style.textShadow=`0 0 14px ${col}`;
   }
 }
 
-// ══════════════════════════════════════
-// MAIN RENDER
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// PAINT CURSOR OVERLAY on AR canvas (shows index tip dot)
+// ═══════════════════════════════════════════════════════════
+function drawPaintCursor(){
+  if(S.mode==='ar'||!S.hands.length) return;
+  const lms=S.hands[0].landmarks;
+  const tip=landmarkToScreen(lms[8]);
+  const indexExtended=lms[8].y<lms[6].y;
+  const middleDown=lms[12].y>lms[10].y;
+  const drawing=indexExtended&&middleDown;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(tip.x,tip.y,drawing?S.brushSize/2+6:10,0,Math.PI*2);
+  ctx.strokeStyle=drawing?S.paintColor:'rgba(255,255,255,0.5)';
+  ctx.lineWidth=2;
+  ctx.shadowColor=S.paintColor;
+  ctx.shadowBlur=drawing?20:8;
+  ctx.stroke();
+  if(drawing){
+    ctx.beginPath();
+    ctx.arc(tip.x,tip.y,4,0,Math.PI*2);
+    ctx.fillStyle=S.paintColor;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN RENDER LOOP
+// ═══════════════════════════════════════════════════════════
 function render(now){
-  requestAnimationFrame(render);updateFPS(now);S.hue=(S.hue+.75)%360;
-  drawStars();drawMatrix();
+  requestAnimationFrame(render);
+  updateFPS(now);
+  S.hue=(S.hue+.8)%360;
+
+  drawStars(); drawMatrix();
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Vignette
   const vg=ctx.createRadialGradient(canvas.width/2,canvas.height/2,canvas.height*.3,canvas.width/2,canvas.height/2,canvas.height*.85);
-  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,20,0.48)');
-  ctx.fillStyle=vg;ctx.fillRect(0,0,canvas.width,canvas.height);
-  updateP();updateR();
-  if(S.hands.length>0){updateTrails();handleGesturePaint(S.hands);}
-  if(S.mode!=='paint'){drawTrails();drawBeam();drawP();drawR();for(let h=0;h<S.hands.length;h++)drawSkel(S.hands[h].landmarks,h);}
-  drawPaintCursor();detectGestures();
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,20,0.5)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Physics
+  updateParticles(); updateRipples();
+  if(S.hands.length>0){ updateTrails(); handleGesturePaint(S.hands); }
+
+  // AR draw
+  if(S.mode!=='paint'){
+    drawTrails(); drawEnergyBeam(); drawParticles(); drawRipples();
+    for(let h=0;h<S.hands.length;h++) drawSkeleton(S.hands[h].landmarks,h);
+  }
+
+  // Paint cursor
+  drawPaintCursor();
+
+  detectGestures();
+
   document.getElementById('stat-hands').textContent=S.hands.length;
   document.getElementById('stat-particles').textContent=S.particles.length;
 }
 
-// ══════════════════════════════════════
-// MEDIAPIPE — load dynamically, no hang
-// ══════════════════════════════════════
-function loadScript(src){
-  return new Promise((resolve,reject)=>{
-    const s=document.createElement('script');
-    s.src=src;s.crossOrigin='anonymous';
-    s.onload=resolve;
-    s.onerror=()=>reject(new Error('Failed: '+src));
-    document.head.appendChild(s);
-  });
-}
-
-async function setupMediaPipe(){
-  // Try primary CDN, fall back to secondary
-  const cdns=[
-    'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js',
-    'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js',
-  ];
-  const camCdns=[
-    'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js',
-    'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
-  ];
-
-  let loaded=false;
-  for(const src of cdns){
-    try{ await loadScript(src); loaded=true; break; }
-    catch(e){ console.warn('CDN failed, trying next...'); }
-  }
-  if(!loaded){ throw new Error('MediaPipe Hands could not be loaded'); }
-
-  let camLoaded=false;
-  for(const src of camCdns){
-    try{ await loadScript(src); camLoaded=true; break; }
-    catch(e){}
-  }
-
-  await setLoaderStep(75,'INITIALIZING MEDIAPIPE...',300);
-
-  const hands=new Hands({
-    locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${f}`
-  });
+// ═══════════════════════════════════════════════════════════
+// MEDIAPIPE
+// ═══════════════════════════════════════════════════════════
+function setupMediaPipe(){
+  const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
   hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:.7,minTrackingConfidence:.6});
   hands.onResults(results=>{
     S.hands=[];
@@ -618,76 +914,37 @@ async function setupMediaPipe(){
         S.hands.push({landmarks:results.multiHandLandmarks[h]});
     }
     for(let h=S.hands.length;h<2;h++){
-      if(S.trails[h])for(let t=0;t<21;t++)if(S.trails[h][t])S.trails[h][t]=[];
+      if(S.trails[h]) for(let t=0;t<21;t++) if(S.trails[h][t]) S.trails[h][t]=[];
     }
   });
-
-  await setLoaderStep(88,'STARTING CAMERA...',200);
-
-  // Get camera manually (more reliable than Camera util)
-  let stream;
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:'user'},audio:false});
-  } catch(e){
-    document.getElementById('cam-err').classList.add('show');
-    throw e;
-  }
-  video.srcObject=stream;
-  await new Promise(r=>{video.onloadedmetadata=r;});
-  await video.play();
-
-  if(camLoaded){
-    // Use Camera utility
-    try{
-      const cam=new Camera(video,{onFrame:async()=>{await hands.send({image:video});},width:1280,height:720});
-      cam.start();
-    } catch(e){
-      // fallback: manual loop
-      startManualLoop(hands);
-    }
-  } else {
-    startManualLoop(hands);
-  }
+  const cam=new Camera(video,{
+    onFrame:async()=>{await hands.send({image:video});},
+    width:1280,height:720
+  });
+  cam.start();
 }
 
-function startManualLoop(hands){
-  let running=true;
-  async function loop(){
-    if(!running)return;
-    if(video.readyState>=2){
-      try{await hands.send({image:video});}catch(e){}
-    }
-    requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-}
-
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // INIT
-// ══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 async function init(){
+  const bar=document.getElementById('loader-bar');
+  const status=document.getElementById('loader-status');
+  const steps=[
+    [15,'LOADING NEURAL NETS...'],
+    [35,'CALIBRATING OPTICS...'],
+    [55,'COMPILING WEBGL SHADERS...'],
+    [75,'INITIALIZING MEDIAPIPE...'],
+    [90,'STARTING CAMERA ARRAY...'],
+    [100,'ALL SYSTEMS NOMINAL'],
+  ];
+  for(const[p,m]of steps){ bar.style.width=p+'%'; status.textContent=m; await new Promise(r=>setTimeout(r,380)); }
   document.addEventListener('click',()=>{if(!audioCtx)initAudio();},{once:true});
   document.addEventListener('touchstart',()=>{if(!audioCtx)initAudio();},{once:true});
-
-  await setLoaderStep(12,'LOADING SCRIPTS...',200);
-  initHolo();
+  setupMediaPipe();
   requestAnimationFrame(render);
-
-  // Show skip button after 3s
-  setTimeout(showSkip, 3000);
-
-  try{
-    await setLoaderStep(30,'FETCHING MEDIAPIPE...',100);
-    await setupMediaPipe();
-    await setLoaderStep(100,'ALL SYSTEMS NOMINAL ✓',400);
-  } catch(e){
-    console.error(e);
-    await setLoaderStep(100,'PARTIAL LOAD — CHECK CONSOLE',300);
-  }
-
-  setTimeout(()=>document.getElementById('loader').classList.add('hidden'),600);
+  setTimeout(()=>document.getElementById('loader').classList.add('hidden'),700);
 }
-
 init();
 </script>
 </body>
